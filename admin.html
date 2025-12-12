@@ -1714,9 +1714,9 @@
                 return error ? 0 : records.length;
             },
 
-            // 17. Blob Data - eth_feeHistory API 사용 (실제 온체인 데이터)
+            // 17. Blob Data - eth_feeHistory via public RPC (실제 온체인 데이터)
             async blob_data() {
-                log('  🔍 Fetching blob data via eth_feeHistory API...', 'info');
+                log('  🔍 Fetching blob data via eth_feeHistory...', 'info');
                 
                 const dencun = new Date('2024-03-13');
                 const today = new Date();
@@ -1736,74 +1736,83 @@
                 
                 const lastDate = existingBlobs?.[0]?.date ? new Date(existingBlobs[0].date) : dencun;
                 
-                // Try eth_feeHistory API for today's data
+                // Try eth_feeHistory via public RPC
                 let todayBlobData = null;
                 
-                try {
-                    const apiKey = ETHERSCAN_API_KEY || 'YourApiKeyToken';
-                    
-                    // V2 API
-                    const response = await fetch(
-                        `https://api.etherscan.io/v2/api?chainid=1&module=proxy&action=eth_feeHistory&blockcount=0x400&newestblock=latest&rewardpercentiles=[]&apikey=${apiKey}`
-                    );
-                    const data = await response.json();
-                    
-                    // Debug: log raw response
-                    log(`  📡 Raw response type: ${typeof data}, has result: ${!!data?.result}`, 'info');
-                    log(`  📡 Full response (first 500 chars): ${JSON.stringify(data).substring(0, 500)}`, 'info');
-                    
-                    let result = data?.result;
-                    
-                    // If result exists, check its structure
-                    if (result) {
-                        log(`  📡 Result type: ${typeof result}, isArray: ${Array.isArray(result)}`, 'info');
+                // Public RPC endpoints (fallback chain)
+                const rpcEndpoints = [
+                    'https://eth.llamarpc.com',
+                    'https://rpc.ankr.com/eth',
+                    'https://ethereum.publicnode.com'
+                ];
+                
+                for (const rpcUrl of rpcEndpoints) {
+                    try {
+                        log(`  📡 Trying ${rpcUrl.split('//')[1]}...`, 'info');
                         
-                        // Maybe result contains the data differently
-                        if (result.blobGasUsedRatio) {
-                            log(`  📡 Found blobGasUsedRatio directly`, 'info');
-                        } else if (result[0] && typeof result[0] === 'object') {
-                            log(`  📡 Result[0] keys: ${Object.keys(result[0]).join(', ')}`, 'info');
+                        const response = await fetch(rpcUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: '2.0',
+                                method: 'eth_feeHistory',
+                                params: ['0x400', 'latest', []],  // 1024 blocks
+                                id: 1
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.error) {
+                            log(`  ⚠️ RPC error: ${data.error.message}`, 'warn');
+                            continue;
                         }
                         
-                        const blobGasUsedRatios = result.blobGasUsedRatio || [];
-                        const baseFeePerBlobGas = result.baseFeePerBlobGas || [];
-                        
-                        if (blobGasUsedRatios.length > 0) {
-                            let totalBlobGasUsed = 0;
-                            let totalBlobFees = 0;
+                        if (data.result && data.result.blobGasUsedRatio) {
+                            const result = data.result;
+                            const blobGasUsedRatios = result.blobGasUsedRatio || [];
+                            const baseFeePerBlobGas = result.baseFeePerBlobGas || [];
                             
-                            for (let i = 0; i < blobGasUsedRatios.length; i++) {
-                                const ratio = parseFloat(blobGasUsedRatios[i]) || 0;
-                                const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
-                                totalBlobGasUsed += blobGasUsed;
+                            log(`  📊 Got ${blobGasUsedRatios.length} blocks of blob data`, 'info');
+                            
+                            if (blobGasUsedRatios.length > 0) {
+                                let totalBlobGasUsed = 0;
+                                let totalBlobFees = 0;
                                 
-                                if (baseFeePerBlobGas[i]) {
-                                    const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16) || 0;
-                                    totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
+                                for (let i = 0; i < blobGasUsedRatios.length; i++) {
+                                    const ratio = parseFloat(blobGasUsedRatios[i]) || 0;
+                                    const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
+                                    totalBlobGasUsed += blobGasUsed;
+                                    
+                                    if (baseFeePerBlobGas[i]) {
+                                        const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16) || 0;
+                                        totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
+                                    }
                                 }
+                                
+                                const scaleFactor = BLOCKS_PER_DAY / blobGasUsedRatios.length;
+                                const dailyBlobCount = Math.round((totalBlobGasUsed / GAS_PER_BLOB) * scaleFactor);
+                                const dailyBlobGas = Math.round(totalBlobGasUsed * scaleFactor);
+                                const dailyBlobFees = totalBlobFees * scaleFactor;
+                                
+                                todayBlobData = {
+                                    date: todayStr,
+                                    timestamp: today.getTime(),
+                                    blob_count: dailyBlobCount,
+                                    blob_gas_used: dailyBlobGas,
+                                    blob_fee_eth: parseFloat(dailyBlobFees.toFixed(6)),
+                                    source: 'eth_feeHistory'
+                                };
+                                
+                                log(`  ✅ eth_feeHistory: ${dailyBlobCount.toLocaleString()} blobs/day, ${dailyBlobFees.toFixed(4)} ETH fees`, 'success');
+                                break; // Success, exit loop
                             }
-                            
-                            const scaleFactor = BLOCKS_PER_DAY / blobGasUsedRatios.length;
-                            const dailyBlobCount = Math.round((totalBlobGasUsed / GAS_PER_BLOB) * scaleFactor);
-                            const dailyBlobGas = Math.round(totalBlobGasUsed * scaleFactor);
-                            const dailyBlobFees = totalBlobFees * scaleFactor;
-                            
-                            todayBlobData = {
-                                date: todayStr,
-                                timestamp: today.getTime(),
-                                blob_count: dailyBlobCount,
-                                blob_gas_used: dailyBlobGas,
-                                blob_fee_eth: parseFloat(dailyBlobFees.toFixed(6)),
-                                source: 'eth_feeHistory'
-                            };
-                            
-                            log(`  ✅ eth_feeHistory: ${blobGasUsedRatios.length} blocks → ${dailyBlobCount.toLocaleString()} blobs/day`, 'success');
                         } else {
-                            log(`  ⚠️ No blobGasUsedRatio array found`, 'warn');
+                            log(`  ⚠️ No blobGasUsedRatio in response`, 'warn');
                         }
+                    } catch (e) {
+                        log(`  ⚠️ ${rpcUrl.split('//')[1]} failed: ${e.message}`, 'warn');
                     }
-                } catch (e) {
-                    log(`  ⚠️ eth_feeHistory API failed: ${e.message}`, 'warn');
                 }
                 
                 // Generate records for missing days
