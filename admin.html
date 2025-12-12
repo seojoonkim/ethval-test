@@ -665,8 +665,7 @@
                                     date: d.UTCDate,
                                     eth_burnt: parseFloat(ethBurnt.toFixed(2)),
                                     avg_gas_price_gwei: parseFloat(gasPrice.toFixed(2)),
-                                    transaction_count: 0,
-                                    source: 'etherscan'
+                                    transaction_count: 0
                                 });
                             }
                         }
@@ -728,8 +727,7 @@
                         date: dateStr,
                         eth_burnt: parseFloat(Math.max(0, ethBurnt).toFixed(2)),
                         avg_gas_price_gwei: parseFloat(Math.max(1, gasPrice).toFixed(2)),
-                        transaction_count: txCount,
-                        source: dailyFee ? 'estimated_from_fees' : 'estimated'
+                        transaction_count: txCount
                     });
                 }
                 
@@ -1135,8 +1133,7 @@
                         const records = data.result.map(d => ({
                             date: d.UTCDate,
                             timestamp: parseInt(d.unixTimeStamp) * 1000,
-                            tx_count: parseInt(d.transactionCount),
-                            source: 'etherscan'
+                            tx_count: parseInt(d.transactionCount)
                         }));
                         const { error } = await batchUpsert('historical_transactions', records);
                         if (error) log(`  ❌ ${error.message}`, 'error');
@@ -1181,8 +1178,7 @@
                     records.push({
                         date: dateStr,
                         timestamp: date.getTime(),
-                        tx_count: txCount,
-                        source: dailyFee ? 'estimated_from_fees' : 'estimated'
+                        tx_count: txCount
                     });
                 }
                 

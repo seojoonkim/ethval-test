@@ -14833,7 +14833,7 @@
                     safeFetchSupabase(`${baseUrl}/historical_eth_price?select=date,close,volume&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_ethereum_tvl?select=date,tvl&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_staking?select=date,total_staked_eth,avg_apr,total_validators,source&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_gas_burn?select=date,avg_gas_price_gwei,eth_burnt,transaction_count,source&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_gas_burn?select=date,avg_gas_price_gwei,eth_burnt,transaction_count&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_active_addresses?select=date,active_addresses&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_eth_supply?select=date,eth_supply,eth2_staking,burnt_fees&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_fear_greed?select=date,value,classification&order=date.desc&limit=${limit}`),
@@ -14851,7 +14851,7 @@
                     safeFetchSupabase(`${baseUrl}/historical_l2_tvl?select=date,chain,tvl&order=date.desc&limit=${limit * 10}`),
                     safeFetchSupabase(`${baseUrl}/historical_nvt?select=date,nvt_ratio&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_staking_apr?select=date,lido_apr&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_transactions?select=date,tx_count,source&order=date.desc&limit=${limit}`)
+                    safeFetchSupabase(`${baseUrl}/historical_transactions?select=date,tx_count&order=date.desc&limit=${limit}`)
                 ]);
                 
                 // 데이터 저장 (10개 이상일 때만)
@@ -14881,9 +14881,8 @@
                     state.supabaseGasHistory = gasData.map(d => ({
                         date: new Date(d.date), gasPrice: parseFloat(d.avg_gas_price_gwei || 0), burnt: parseFloat(d.eth_burnt || 0), txCount: parseInt(d.transaction_count || 0)
                     })).reverse();
-                    // 데이터 소스 저장 (최신 레코드 기준)
-                    state.gasDataSource = gasData[0]?.source || 'unknown';
-                    console.log(`      Source: ${state.gasDataSource}`);
+                    state.gasDataSource = 'supabase';
+                    console.log(`      Source: supabase (${gasData.length} records)`);
                 }
                 
                 if (activeData.length > 10) {
