@@ -801,6 +801,7 @@
             exchange_reserve: { name: 'Exchange Reserve', icon: '🏛️', table: 'historical_exchange_reserve', valueField: 'reserve_eth', format: 'eth', expectedDays: 1095, phase: 2, depends: [] },
             eth_supply: { name: 'ETH Supply', icon: '💎', table: 'historical_eth_supply', valueField: 'eth_supply', format: 'eth', expectedDays: 1095, phase: 2, depends: ['staking_data'] },
             l2_addresses: { name: 'L2 Addresses', icon: '👤', table: 'historical_l2_addresses', valueField: 'active_addresses', format: 'number', aggregate: true, expectedDays: 3000, phase: 2, depends: ['l2_transactions'] },
+            daily_issuance: { name: 'Daily Issuance', icon: '🪙', table: 'historical_daily_issuance', valueField: 'daily_issuance', format: 'eth', expectedDays: 30, phase: 2, depends: [] },
             
             // ═══════════════════════════════════════════════════════════════════
             // PHASE 3: 2차 계산 (Phase 1+2 데이터 의존)
@@ -1746,7 +1747,98 @@
                 return error ? 0 : records.length;
             },
 
-            // 19. Volatility - HAS source
+            // 19. Daily Issuance - Etherscan ethsupply2 API
+            async daily_issuance() {
+                log('  🔍 Fetching Daily Issuance data from Etherscan...', 'info');
+                
+                // Etherscan ethsupply2 API returns Eth2Staking (cumulative staking rewards)
+                // Daily Issuance = delta of Eth2Staking between days
+                
+                if (!ETHERSCAN_API_KEY) {
+                    log('  ❌ Etherscan API key required', 'error');
+                    return 0;
+                }
+                
+                // 현재 Eth2Staking 값 가져오기
+                const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply2&apikey=${ETHERSCAN_API_KEY}`;
+                const data = await fetchJSON(url);
+                
+                if (data?.status !== '1' || !data?.result?.Eth2Staking) {
+                    log('  ❌ Failed to get ethsupply2 data', 'error');
+                    return 0;
+                }
+                
+                const currentEth2Staking = parseFloat(data.result.Eth2Staking) / 1e18; // Wei to ETH
+                const currentEthSupply = parseFloat(data.result.EthSupply) / 1e18;
+                const burntFees = parseFloat(data.result.BurntFees) / 1e18;
+                const withdrawnTotal = parseFloat(data.result.WithdrawnTotal || 0) / 1e18;
+                
+                log(`  📊 Current Eth2Staking: ${currentEth2Staking.toLocaleString()} ETH`, 'info');
+                log(`  📊 Current ETH Supply: ${currentEthSupply.toLocaleString()} ETH`, 'info');
+                log(`  📊 Total Burnt Fees: ${burntFees.toLocaleString()} ETH`, 'info');
+                
+                // 기존 데이터 확인
+                const { data: existingData } = await supabase.from('historical_daily_issuance')
+                    .select('date, eth2_staking_cumulative, daily_issuance')
+                    .order('date', { ascending: false })
+                    .limit(30);
+                
+                const today = new Date().toISOString().split('T')[0];
+                const records = [];
+                
+                // 이전 데이터가 있으면 차이 계산
+                if (existingData && existingData.length > 0) {
+                    const lastRecord = existingData[0];
+                    const lastDate = lastRecord.date;
+                    const lastEth2Staking = lastRecord.eth2_staking_cumulative || 0;
+                    
+                    if (lastDate !== today && lastEth2Staking > 0) {
+                        // 날짜 차이 계산
+                        const daysDiff = Math.max(1, Math.round((new Date(today) - new Date(lastDate)) / 86400000));
+                        const dailyIssuance = (currentEth2Staking - lastEth2Staking) / daysDiff;
+                        
+                        // 합리적인 범위인지 확인 (500-3500 ETH/day)
+                        if (dailyIssuance > 500 && dailyIssuance < 3500) {
+                            records.push({
+                                date: today,
+                                eth2_staking_cumulative: currentEth2Staking,
+                                daily_issuance: parseFloat(dailyIssuance.toFixed(2)),
+                                burnt_fees_cumulative: burntFees,
+                                withdrawn_total: withdrawnTotal,
+                                source: 'etherscan'
+                            });
+                            log(`  ✅ Daily Issuance: ${dailyIssuance.toFixed(0)} ETH (${daysDiff} day(s) since last record)`, 'success');
+                        } else {
+                            log(`  ⚠️ Calculated issuance out of range: ${dailyIssuance.toFixed(0)} ETH`, 'warn');
+                        }
+                    } else if (lastDate === today) {
+                        log(`  ✅ Today's data already exists`, 'success');
+                        return 0;
+                    }
+                } else {
+                    // 첫 기록 - 추정값으로 시작
+                    const estimatedDailyIssuance = 1700; // ~1700 ETH/day post-Merge baseline
+                    records.push({
+                        date: today,
+                        eth2_staking_cumulative: currentEth2Staking,
+                        daily_issuance: estimatedDailyIssuance,
+                        burnt_fees_cumulative: burntFees,
+                        withdrawn_total: withdrawnTotal,
+                        source: 'etherscan-initial'
+                    });
+                    log(`  📦 Initial record with baseline: ${estimatedDailyIssuance} ETH/day`, 'info');
+                }
+                
+                if (records.length === 0) {
+                    return 0;
+                }
+                
+                const { error } = await batchUpsert('historical_daily_issuance', records);
+                if (error) log(`  ❌ ${error.message}`, 'error');
+                return error ? 0 : records.length;
+            },
+
+            // 20. Volatility - HAS source
             async volatility() {
                 const { data: prices } = await supabase.from('historical_eth_price').select('date, close').order('date', { ascending: false }).limit(1100);
                 if (!prices || prices.length < 30) return 0;
@@ -1764,7 +1856,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 20. NVT - Market Cap / On-chain Activity proxy
+            // 21. NVT - Market Cap / On-chain Activity proxy
             // NVT 범위: bull market 20-40, bear market 80-150, normal 40-80
             async nvt() {
                 const { data: prices } = await supabase.from('historical_eth_price').select('date, close').order('date', { ascending: false }).limit(1100);
@@ -1809,7 +1901,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 21. Transactions - Etherscan V2 with fallback
+            // 22. Transactions - Etherscan V2 with fallback
             async transactions() {
                 // 먼저 기존 CSV 데이터 확인
                 const { data: existingData } = await supabase.from('historical_transactions')
@@ -1916,7 +2008,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 22. L2 Transactions - HAS source
+            // 23. L2 Transactions - HAS source
             async l2_transactions() {
                 const chains = ['Arbitrum', 'Optimism', 'Base'];
                 let total = 0;
@@ -1946,7 +2038,7 @@
                 return total;
             },
 
-            // 23. L2 Addresses - HAS source
+            // 24. L2 Addresses - HAS source
             async l2_addresses() {
                 // L2 Transactions 데이터가 필요 - 잠시 대기
                 await new Promise(r => setTimeout(r, 1000));
@@ -1982,7 +2074,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 24. Protocol TVL - HAS source, chain column (optimized)
+            // 25. Protocol TVL - HAS source, chain column (optimized)
             async protocol_tvl() {
                 const protocols = ['lido', 'aave', 'makerdao', 'uniswap-v2', 'uniswap-v3', 'uniswap-v4', 'eigenlayer'];
                 const cutoff = Date.now() / 1000 - (1095 * 86400);
@@ -2035,7 +2127,7 @@
                 return total;
             },
 
-            // 25. Staking APR - HAS source
+            // 26. Staking APR - HAS source
             async staking_apr() {
                 const data = await fetchJSON('https://yields.llama.fi/chart/747c1d2a-c668-4682-b9f9-296708a3dd90');
                 if (!data?.data) return 0;
@@ -2050,7 +2142,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 26. ETH in DeFi - HAS source
+            // 27. ETH in DeFi - HAS source
             async eth_in_defi() {
                 const { data: tvl } = await supabase.from('historical_ethereum_tvl').select('date, tvl').order('date', { ascending: false }).limit(1100);
                 const { data: prices } = await supabase.from('historical_eth_price').select('date, close').order('date', { ascending: false }).limit(1100);
@@ -2065,7 +2157,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 27. Global MCap - CoinGecko days=365 (무료 최대)
+            // 28. Global MCap - CoinGecko days=365 (무료 최대)
             async global_mcap() {
                 log(`  🔍 Fetching global mcap from CoinGecko...`, 'info');
                 
@@ -2110,7 +2202,7 @@
                 return error ? 0 : records.length;
             },
 
-            // 28. DEX by Protocol - HAS source
+            // 29. DEX by Protocol - HAS source
             async dex_by_protocol() {
                 const protocols = ['uniswap-v2', 'uniswap-v3', 'uniswap-v4', 'curve-dex', 'balancer'];
                 let total = 0;
@@ -2132,7 +2224,7 @@
                 return total;
             },
 
-            // 29. Network Stats - HAS source
+            // 30. Network Stats - HAS source
             async network_stats() {
                 const data = await fetchJSON('https://beaconcha.in/api/v1/epoch/latest');
                 if (!data?.data) return 0;
