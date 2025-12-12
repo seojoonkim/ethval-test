@@ -20599,18 +20599,36 @@
                 // 18. Transactions - Supabase Gas 데이터 사용
                 // ═══════════════════════════════════════════════════════════════════
                 let txSource = 'fallback';
-                if (state.supabaseGasHistory?.length > 0) {
+                // 1차: 새로운 Supabase 트랜잭션 테이블 사용
+                if (state.supabaseTxHistory?.length > 50) {
                     txSource = 'supabase';
-                    const latestTx = state.supabaseGasHistory[state.supabaseGasHistory.length - 1];
-                    state.txEth = latestTx.txCount || 1200000;
-                    state.txEthHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.txCount || 0 }));
-                    state.txTotalHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: (d.txCount || 0) * 4 })); // L2 포함 추정
+                    const latestTx = state.supabaseTxHistory[state.supabaseTxHistory.length - 1];
+                    state.txEth = latestTx.value || 1200000;
+                    state.txEthHistory = state.supabaseTxHistory;
+                    
+                    // L2 데이터도 있으면 합산
+                    if (state.supabaseL2TxHistory?.length > 50) {
+                        state.txTotalHistory = state.supabaseTxHistory.map((d, i) => {
+                            const l2Data = state.supabaseL2TxHistory.find(l => 
+                                l.date.toISOString().split('T')[0] === d.date.toISOString().split('T')[0]
+                            );
+                            return { date: d.date, value: d.value + (l2Data?.value || 0) };
+                        });
+                        const latestL2 = state.supabaseL2TxHistory[state.supabaseL2TxHistory.length - 1];
+                        state.txTotal = state.txEth + (latestL2?.value || 0);
+                    } else {
+                        state.txTotalHistory = state.supabaseTxHistory.map(d => ({ date: d.date, value: d.value * 4 }));
+                        state.txTotal = state.txEth * 4;
+                    }
+                    console.log(`   Tx: Using Supabase (ETH: ${state.supabaseTxHistory.length}, L2: ${state.supabaseL2TxHistory?.length || 0})`);
                 } else {
                     state.txEth = state.txEth || 1200000;
+                    state.txTotal = state.txTotal || 5000000;
                     if (!state.txEthHistory?.length) state.txEthHistory = simpleHistory(1.2e6);
                     if (!state.txTotalHistory?.length) state.txTotalHistory = simpleHistory(5e6);
                 }
                 setEl('tx-eth', (state.txEth / 1e6).toFixed(2) + 'M');
+                setEl('tx-total', ((state.txTotal || state.txEth * 4) / 1e6).toFixed(1) + 'M');
                 safeCall(() => updateMetricChart('tx-eth-chart', txEthChart, state.txEthHistory, '#14b8a6', 'txEth'), 'txEth');
                 safeCall(() => updateMetricChart('tx-total-chart', txTotalChart, state.txTotalHistory, '#8b5cf6', 'txTotal'), 'txTotal');
                 setDataSource('tx-eth-chart', txSource);
