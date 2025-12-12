@@ -633,37 +633,55 @@ async function collect_nvt() {
 // 21. Transactions (DefiLlama)
 // ============================================================
 async function collect_transactions() {
-    console.log('\n📝 [21/29] Transactions...');
-    const data = await fetchJSON('https://api.llama.fi/summary/fees/ethereum?dataType=dailyFees');
-    if (!data?.totalDataChart) return 0;
-    // Estimate tx from fees (avg $5/tx)
-    const records = data.totalDataChart.filter(d => d[1] > 0).map(d => ({
-        date: new Date(d[0] * 1000).toISOString().split('T')[0],
-        tx_count: Math.floor(d[1] / 5),
-        source: 'estimated'
-    }));
-    return await upsertBatch('historical_transactions', records);
+    console.log('\n📝 [21/29] Transactions (growthepie)...');
+    
+    // growthepie API - 실제 트랜잭션 수
+    const data = await fetchJSON('https://api.growthepie.xyz/v1/export/txcount.json');
+    if (!data || !Array.isArray(data)) {
+        console.log('  ⚠️ growthepie API failed');
+        return 0;
+    }
+    
+    // Ethereum mainnet 데이터만 필터
+    const ethRecords = data
+        .filter(d => d.origin_key === 'ethereum' && d.metric_key === 'txcount')
+        .map(d => ({
+            date: d.date,
+            tx_count: Math.floor(d.value),
+            source: 'growthepie'
+        }));
+    
+    console.log(`  📦 ${ethRecords.length} ETH mainnet tx records`);
+    return await upsertBatch('historical_transactions', ethRecords);
 }
 
 // ============================================================
-// 22. L2 Transactions (DefiLlama)
+// 22. L2 Transactions (growthepie - 실제 데이터)
 // ============================================================
 async function collect_l2_transactions() {
-    console.log('\n🔗 [22/29] L2 Transactions...');
-    const chains = ['Arbitrum', 'Optimism', 'Base'];
-    const all = [];
-    for (const chain of chains) {
-        await sleep(300);
-        const data = await fetchJSON(`https://api.llama.fi/summary/fees/${chain.toLowerCase()}?dataType=dailyFees`);
-        if (data?.totalDataChart) {
-            const recs = data.totalDataChart.filter(d => d[1] > 0).map(d => ({
-                date: new Date(d[0] * 1000).toISOString().split('T')[0],
-                chain, tx_count: Math.floor(d[1] / 0.5) // L2s cheaper
-            }));
-            all.push(...recs);
-        }
+    console.log('\n🔗 [22/29] L2 Transactions (growthepie)...');
+    
+    // growthepie API - 모든 체인의 실제 트랜잭션 수
+    const data = await fetchJSON('https://api.growthepie.xyz/v1/export/txcount.json');
+    if (!data || !Array.isArray(data)) {
+        console.log('  ⚠️ growthepie API failed');
+        return 0;
     }
-    return await upsertBatch('historical_l2_transactions', all, 'date,chain');
+    
+    // L2 체인들 필터 (ethereum 제외)
+    const l2Chains = ['arbitrum', 'optimism', 'base', 'zksync_era', 'linea', 'scroll', 'blast', 'manta', 'mode', 'zora', 'polygon_zkevm', 'starknet'];
+    
+    const l2Records = data
+        .filter(d => l2Chains.includes(d.origin_key) && d.metric_key === 'txcount')
+        .map(d => ({
+            date: d.date,
+            chain: d.origin_key,
+            tx_count: Math.floor(d.value),
+            source: 'growthepie'
+        }));
+    
+    console.log(`  📦 ${l2Records.length} L2 tx records across ${l2Chains.length} chains`);
+    return await upsertBatch('historical_l2_transactions', l2Records, 'date,chain');
 }
 
 // ============================================================
