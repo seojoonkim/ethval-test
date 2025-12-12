@@ -132,13 +132,22 @@
                         <div class="csv-status" id="statusGas">No file</div>
                     </div>
                     <!-- Total Supply -->
-                    <div class="csv-upload-box" id="dropIssuance" ondrop="handleDrop(event, 'issuance')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                    <div class="csv-upload-box" id="dropSupply" ondrop="handleDrop(event, 'supply')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                         <div class="csv-icon">💎</div>
                         <div class="csv-title">Total Supply</div>
                         <a href="https://etherscan.io/chart/ethersupply" target="_blank" class="csv-link">📥 Download CSV</a>
-                        <input type="file" id="fileIssuance" accept=".csv" onchange="handleFile(event, 'issuance')" style="display:none">
-                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileIssuance').click()">Select CSV</button>
-                        <div class="csv-status" id="statusIssuance">No file</div>
+                        <input type="file" id="fileSupply" accept=".csv" onchange="handleFile(event, 'supply')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileSupply').click()">Select CSV</button>
+                        <div class="csv-status" id="statusSupply">No file</div>
+                    </div>
+                    <!-- Daily Issuance -->
+                    <div class="csv-upload-box" id="dropDailyIssuance" ondrop="handleDrop(event, 'dailyIssuance')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">🪙</div>
+                        <div class="csv-title">Daily Issuance</div>
+                        <a href="#" onclick="alert('Use generated CSV from Claude or download from ultrasound.money'); return false;" class="csv-link">📥 Get CSV</a>
+                        <input type="file" id="fileDailyIssuance" accept=".csv" onchange="handleFile(event, 'dailyIssuance')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileDailyIssuance').click()">Select CSV</button>
+                        <div class="csv-status" id="statusDailyIssuance">No file</div>
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -231,7 +240,7 @@
         let supabase;
         
         // CSV Data Storage
-        const csvData = { burn: null, tx: null, gas: null, issuance: null };
+        const csvData = { burn: null, tx: null, gas: null, supply: null, dailyIssuance: null };
 
         // ═══════════════════════════════════════════════════════════════════
         // CSV UPLOAD & PARSING
@@ -286,12 +295,33 @@
                         let timestamp, value;
                         
                         // Handle different CSV formats
-                        if (type === 'issuance') {
+                        if (type === 'supply') {
                             // Supply Growth CSV: Date, UnixTimeStamp, TotalSupply
                             // We need to calculate daily change (issuance - burn = net change)
                             // Store raw total supply, we'll calculate daily issuance after parsing all records
                             timestamp = parseInt(parts[1].replace(/,/g, ''));
                             value = parseFloat(parts[2].replace(/,/g, ''));
+                            
+                        } else if (type === 'dailyIssuance') {
+                            // Daily Issuance CSV: date, daily_issuance, eth2_staking_cumulative
+                            // 우리가 생성한 CSV 형식
+                            value = parseFloat(parts[1].replace(/,/g, ''));
+                            const cumulative = parts[2] ? parseFloat(parts[2].replace(/,/g, '')) : null;
+                            
+                            let dateObj;
+                            if (dateStr.includes('/')) {
+                                const [m, d, y] = dateStr.split('/');
+                                dateObj = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+                            } else {
+                                dateObj = new Date(dateStr);
+                            }
+                            timestamp = Math.floor(dateObj.getTime() / 1000);
+                            
+                            // Store cumulative in record for later use
+                            if (cumulative) {
+                                records.push({ date: dateStr.includes('/') ? `${dateStr.split('/')[2]}-${dateStr.split('/')[0].padStart(2,'0')}-${dateStr.split('/')[1].padStart(2,'0')}` : dateStr, timestamp, value, cumulative });
+                                continue;
+                            }
                             
                         } else if (parts.length === 2) {
                             // 2-column format: Date, Value (no timestamp)
@@ -331,7 +361,7 @@
                     
                     csvData[type] = records;
                     
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', issuance: 'Issuance' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     const boxEl = document.getElementById(`drop${typeMap[type]}`);
                     
@@ -344,7 +374,7 @@
                     
                 } catch (err) {
                     console.error(`[${type}] Parse error:`, err);
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', issuance: 'Issuance' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     statusEl.textContent = `✗ Parse error: ${err.message}`;
                     statusEl.className = 'csv-status error';
@@ -378,7 +408,7 @@
             const btn = document.getElementById('importBtn');
             const loaded = Object.values(csvData).filter(v => v !== null).length;
             btn.disabled = loaded === 0;
-            btn.textContent = `📥 Import ${loaded}/4 Files to Supabase`;
+            btn.textContent = `📥 Import ${loaded}/5 Files to Supabase`;
         }
         
         async function importAllCSV() {
@@ -480,11 +510,11 @@
                 }
                 
                 // Import Supply data (Total Supply from CSV)
-                if (csvData.issuance) {
+                if (csvData.supply) {
                     progressEl.textContent = 'Importing Supply data...';
                     
                     // Sort by date ascending
-                    const sorted = [...csvData.issuance].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    const sorted = [...csvData.supply].sort((a, b) => new Date(a.date) - new Date(b.date));
                     
                     // Store Total Supply in eth_supply column
                     // Note: Daily Issuance is calculated from staking APR in index.html, not from CSV
@@ -504,6 +534,31 @@
                     }
                     
                     totalImported += supplyRecords.length;
+                }
+                
+                // Import Daily Issuance data (from generated CSV)
+                if (csvData.dailyIssuance) {
+                    progressEl.textContent = 'Importing Daily Issuance data...';
+                    
+                    const sorted = [...csvData.dailyIssuance].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    const issuanceRecords = sorted.map(r => ({
+                        date: r.date,
+                        daily_issuance: r.value,
+                        eth2_staking_cumulative: r.cumulative || null,
+                        source: 'csv'
+                    }));
+                    
+                    log(`📦 Daily Issuance: Importing ${issuanceRecords.length} records`, 'info');
+                    
+                    const { error: issuanceError } = await batchUpsert('historical_daily_issuance', issuanceRecords);
+                    if (issuanceError) {
+                        log(`⚠️ Daily Issuance save error: ${issuanceError.message}`, 'warn');
+                    } else {
+                        log(`✅ Daily Issuance: Imported ${issuanceRecords.length} records`, 'success');
+                    }
+                    
+                    totalImported += issuanceRecords.length;
                 }
                 
                 progressEl.textContent = `✓ Done! Imported ${totalImported} total records`;
