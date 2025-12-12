@@ -2411,140 +2411,71 @@
 
             // 22. Transactions - Etherscan V2 with fallback
             async transactions() {
-                // 먼저 기존 CSV 데이터 확인
-                const { data: existingData } = await supabase.from('historical_transactions')
-                    .select('date, tx_count')
-                    .order('date', { ascending: false })
-                    .limit(1200);
+                // growthepie API - 실제 트랜잭션 수
+                log('  🔍 Fetching ETH transactions from growthepie...', 'info');
+                const data = await fetchJSON('https://api.growthepie.xyz/v1/export/txcount.json');
                 
-                const existingDates = new Set(existingData?.filter(d => d.tx_count > 0).map(d => d.date) || []);
-                log(`  📋 Existing transactions records: ${existingDates.size}`, 'info');
-                
-                // CSV 데이터가 충분하면 (1000개 이상) 완전히 건너뛰기
-                if (existingDates.size > 1000) {
-                    log(`  📋 Skipping - sufficient CSV data exists (${existingDates.size} records)`, 'success');
-                    return -1;
-                }
-                
-                // Etherscan V2 API - Daily Transaction Count (PRO 전용일 수 있음)
-                if (ETHERSCAN_API_KEY) {
-                    const endDate = new Date().toISOString().split('T')[0];
-                    const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
-                    const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailytx&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
-                    
-                    log(`  🔍 Trying Etherscan V2 API...`, 'info');
-                    const data = await fetchJSON(url);
-                    
-                    if (data?.status === '1' && data.result?.length > 0) {
-                        log(`  📦 Got ${data.result.length} days from Etherscan V2`, 'info');
-                        
-                        // 기존 CSV 데이터가 있는 날짜는 건너뛰기
-                        const records = data.result
-                            .filter(d => !existingDates.has(d.UTCDate))
-                            .map(d => ({
-                                date: d.UTCDate,
-                                timestamp: parseInt(d.unixTimeStamp) * 1000,
-                                tx_count: parseInt(d.transactionCount)
-                            }));
-                        
-                        if (records.length === 0) {
-                            log(`  ✅ All dates already have CSV data`, 'success');
-                            return 0;
-                        }
-                        
-                        log(`  📦 Adding ${records.length} new records from Etherscan`, 'info');
-                        const { error } = await batchUpsert('historical_transactions', records);
-                        if (error) log(`  ❌ ${error.message}`, 'error');
-                        return error ? 0 : records.length;
-                    }
-                    log(`  ⚠️ Etherscan V2 stats requires PRO - using estimates`, 'warn');
-                }
-                
-                // Fallback: Protocol fees 기반 추정 (CSV 데이터 없는 날짜만)
-                // existingDates는 이미 위에서 조회됨
-                
-                // ETH fees와 트랜잭션 수는 상관관계가 있음
-                const { data: fees } = await supabase.from('historical_protocol_fees')
-                    .select('date, fees')
-                    .eq('chain', 'ethereum')
-                    .order('date', { ascending: false })
-                    .limit(1100);
-                
-                const feeMap = new Map(fees?.map(f => [f.date, f.fees]) || []);
-                const today = new Date();
-                const records = [];
-                
-                for (let i = 0; i < 1095; i++) {
-                    const date = new Date(today);
-                    date.setDate(date.getDate() - i);
-                    const dateStr = date.toISOString().split('T')[0];
-                    
-                    // 기존 데이터가 있는 날짜는 건너뛰기
-                    if (existingDates.has(dateStr)) continue;
-                    
-                    // Fee 데이터가 있으면 기반으로 추정 (avg fee ~$2-5 per tx)
-                    const dailyFee = feeMap.get(dateStr);
-                    let txCount;
-                    
-                    if (dailyFee && dailyFee > 0) {
-                        // fee / avg_fee_per_tx = tx count
-                        txCount = Math.round(dailyFee / 3);
-                    } else {
-                        // 기본 추정: 1.0M-1.3M tx/day
-                        const baseTx = 1150000;
-                        const dayOfWeek = date.getDay();
-                        const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 0.85 : 1.0;
-                        const variation = 0.95 + (Math.sin(i * 0.1) * 0.05);
-                        txCount = Math.round(baseTx * weekendFactor * variation);
-                    }
-                    
-                    records.push({
-                        date: dateStr,
-                        timestamp: date.getTime(),
-                        tx_count: txCount
-                    });
-                }
-                
-                if (records.length === 0) {
-                    log(`  ✅ All dates already have data`, 'success');
+                if (!data || !Array.isArray(data)) {
+                    log('  ❌ growthepie API failed', 'error');
                     return 0;
                 }
                 
-                log(`  📦 Generated ${records.length} records for missing dates (fee-based estimates)`, 'info');
-                const { error } = await batchUpsert('historical_transactions', records);
+                // Ethereum mainnet 데이터만 필터
+                const ethRecords = data
+                    .filter(d => d.origin_key === 'ethereum' && d.metric_key === 'txcount' && d.value > 0)
+                    .map(d => ({
+                        date: d.date,
+                        tx_count: Math.floor(d.value),
+                        source: 'growthepie'
+                    }));
+                
+                log(`  📦 Got ${ethRecords.length} ETH mainnet tx records`, 'info');
+                
+                if (ethRecords.length === 0) return 0;
+                
+                const { error } = await batchUpsert('historical_transactions', ethRecords);
                 if (error) log(`  ❌ ${error.message}`, 'error');
-                return error ? 0 : records.length;
+                return error ? 0 : ethRecords.length;
             },
 
-            // 23. L2 Transactions - HAS source
+            // 23. L2 Transactions - growthepie API (실제 데이터)
             async l2_transactions() {
-                const chains = ['Arbitrum', 'Optimism', 'Base'];
-                log(`  🔍 Fetching transactions for ${chains.length} L2 chains...`, 'info');
-                let total = 0;
-                for (const chain of chains) {
-                    try {
-                        const data = await fetchJSON(`https://api.llama.fi/summary/fees/${chain.toLowerCase()}?dataType=dailyFees`);
-                        if (!data?.totalDataChart) {
-                            log(`    ⚠️ ${chain}: No data`, 'warn');
-                            continue;
-                        }
-                        const records = data.totalDataChart.filter(d => d[1] > 0).map(d => ({
-                            date: new Date(d[0] * 1000).toISOString().split('T')[0],
-                            timestamp: d[0] * 1000, chain,
-                            tx_count: Math.floor(d[1] / 0.5),
-                            source: 'defillama'
-                        }));
-                        if (records.length > 0) {
-                            log(`    📦 ${chain}: ${records.length} records`, 'info');
-                            const { error } = await batchUpsert('historical_l2_transactions', records, 'date,chain');
-                            if (!error) total += records.length;
-                        }
-                    } catch (e) {
-                        log(`    ⚠️ ${chain}: ${e.message}`, 'warn');
-                    }
-                    await new Promise(r => setTimeout(r, 200));
+                log('  🔍 Fetching L2 transactions from growthepie...', 'info');
+                const data = await fetchJSON('https://api.growthepie.xyz/v1/export/txcount.json');
+                
+                if (!data || !Array.isArray(data)) {
+                    log('  ❌ growthepie API failed', 'error');
+                    return 0;
                 }
-                return total;
+                
+                // L2 체인들 필터 (ethereum 제외)
+                const l2Chains = ['arbitrum', 'optimism', 'base', 'zksync_era', 'linea', 'scroll', 'blast', 'manta', 'mode', 'zora', 'polygon_zkevm', 'starknet'];
+                
+                const l2Records = data
+                    .filter(d => l2Chains.includes(d.origin_key) && d.metric_key === 'txcount' && d.value > 0)
+                    .map(d => ({
+                        date: d.date,
+                        chain: d.origin_key,
+                        tx_count: Math.floor(d.value),
+                        source: 'growthepie'
+                    }));
+                
+                // 체인별 카운트 로그
+                const chainCounts = {};
+                l2Records.forEach(r => {
+                    chainCounts[r.chain] = (chainCounts[r.chain] || 0) + 1;
+                });
+                
+                log(`  📦 Got ${l2Records.length} L2 tx records:`, 'info');
+                Object.entries(chainCounts).forEach(([chain, count]) => {
+                    log(`    • ${chain}: ${count} days`, 'info');
+                });
+                
+                if (l2Records.length === 0) return 0;
+                
+                const { error } = await batchUpsert('historical_l2_transactions', l2Records, 'date,chain');
+                if (error) log(`  ❌ ${error.message}`, 'error');
+                return error ? 0 : l2Records.length;
             },
 
             // 24. L2 Addresses - HAS source
