@@ -18032,12 +18032,16 @@
             
             const history = state.blobFeesHistory || [];
             const cutoffDate = Date.now() - (days * 24 * 60 * 60 * 1000);
-            const filtered = history.filter(d => d.date.getTime() > cutoffDate);
+            
+            // Blobs only exist since Dencun (March 13, 2024)
+            const dencunDate = new Date('2024-03-13').getTime();
+            const effectiveCutoff = Math.max(cutoffDate, dencunDate);
+            const filtered = history.filter(d => d.date.getTime() > effectiveCutoff);
             
             setChartLoading('blob-fees-chart', false);
             
             if (filtered.length < 3) {
-                // Show "No data before Dencun" message
+                // Show "Since Dencun" message
                 const changeEl = document.getElementById('blob-fees-change');
                 if (changeEl) {
                     changeEl.textContent = 'Since Mar 2024';
@@ -18048,13 +18052,32 @@
             
             const latest = filtered[filtered.length - 1].value;
             const oldest = filtered[0].value;
-            const change = oldest > 0 ? ((latest - oldest) / oldest) * 100 : 0;
+            
+            // Calculate change - handle cases where oldest is 0 or very small
+            let change = 0;
+            let changeLabel = '';
+            
+            // Determine actual period covered by data
+            const actualDays = Math.round((filtered[filtered.length - 1].date - filtered[0].date) / 86400000);
+            
+            if (oldest > 0.001) {  // Only calculate if oldest is meaningful
+                change = ((latest - oldest) / oldest) * 100;
+                if (actualDays < 100) changeLabel = `${actualDays}D`;
+                else if (actualDays < 400) changeLabel = `${Math.round(actualDays / 30)}M`;
+                else changeLabel = 'Since Dencun';
+            } else {
+                changeLabel = 'Since Dencun';
+            }
             
             const changeEl = document.getElementById('blob-fees-change');
             if (changeEl) {
-                const periodLabel = days === 90 ? '90D' : days === 365 ? 'YoY' : '3Y';
-                changeEl.textContent = fmt.pct(change) + ' ' + periodLabel;
-                changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                if (changeLabel === 'Since Dencun' || Math.abs(change) > 1000) {
+                    changeEl.textContent = 'Since Mar 2024';
+                    changeEl.className = 'change';
+                } else {
+                    changeEl.textContent = fmt.pct(change) + ' ' + changeLabel;
+                    changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                }
             }
             
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
@@ -18292,7 +18315,11 @@
             
             const history = state.blobCountHistory || [];
             const cutoffDate = Date.now() - (days * 24 * 60 * 60 * 1000);
-            const filtered = history.filter(d => d.date.getTime() > cutoffDate);
+            
+            // Blobs only exist since Dencun (March 13, 2024)
+            const dencunDate = new Date('2024-03-13').getTime();
+            const effectiveCutoff = Math.max(cutoffDate, dencunDate);
+            const filtered = history.filter(d => d.date.getTime() > effectiveCutoff);
             
             if (filtered.length < 3) {
                 const changeEl = document.getElementById('blob-count-change');
@@ -18306,13 +18333,32 @@
             
             const latest = filtered[filtered.length - 1].value;
             const oldest = filtered[0].value;
-            const change = oldest > 0 ? ((latest - oldest) / oldest) * 100 : 0;
+            
+            // Calculate change - handle cases where oldest is 0 or very small
+            let change = 0;
+            let changeLabel = '';
+            
+            // Determine actual period covered by data
+            const actualDays = Math.round((filtered[filtered.length - 1].date - filtered[0].date) / 86400000);
+            
+            if (oldest > 100) {  // Only calculate if oldest is meaningful (at least 100 blobs)
+                change = ((latest - oldest) / oldest) * 100;
+                if (actualDays < 100) changeLabel = `${actualDays}D`;
+                else if (actualDays < 400) changeLabel = `${Math.round(actualDays / 30)}M`;
+                else changeLabel = 'Since Dencun';
+            } else {
+                changeLabel = 'Since Dencun';
+            }
             
             const changeEl = document.getElementById('blob-count-change');
             if (changeEl) {
-                const periodLabel = days === 90 ? '90D' : days === 365 ? 'YoY' : '3Y';
-                changeEl.textContent = fmt.pct(change) + ' ' + periodLabel;
-                changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                if (changeLabel === 'Since Dencun' || Math.abs(change) > 500) {
+                    changeEl.textContent = 'Since Mar 2024';
+                    changeEl.className = 'change';
+                } else {
+                    changeEl.textContent = fmt.pct(change) + ' ' + changeLabel;
+                    changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                }
             }
             
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
@@ -20072,18 +20118,24 @@
                 // ═══════════════════════════════════════════════════════════════════
                 let l2Source = 'fallback';
                 
-                // L2 TVL이 $10B 이상이어야 유효 (현재 ~$45B)
-                const validL2Data = state.supabaseL2History?.length > 100 && 
-                                    state.supabaseL2History[state.supabaseL2History.length - 1]?.value > 10e9;
+                // L2 TVL: 10개 이상의 날짜 데이터, 최신값 $1B 이상이면 유효 (현재 ~$45-50B)
+                const hasL2Data = state.supabaseL2History?.length > 0;
+                const l2DataPoints = state.supabaseL2History?.length || 0;
+                const latestL2Value = state.supabaseL2History?.[state.supabaseL2History.length - 1]?.value || 0;
+                
+                console.log(`   L2 TVL check: hasData=${hasL2Data}, points=${l2DataPoints}, latest=$${(latestL2Value/1e9).toFixed(2)}B`);
+                
+                // 조건 완화: 10개 이상의 데이터 포인트, $1B 이상
+                const validL2Data = l2DataPoints > 10 && latestL2Value > 1e9;
                 
                 if (validL2Data) {
                     state.l2History = state.supabaseL2History;
                     state.l2Tvl = state.l2History[state.l2History.length - 1].value;
                     l2Source = 'supabase';
-                    console.log(`   L2 TVL: Using Supabase (${state.l2History.length} points), $${(state.l2Tvl/1e9).toFixed(1)}B`);
+                    console.log(`   ✅ L2 TVL: Using Supabase (${state.l2History.length} points), $${(state.l2Tvl/1e9).toFixed(1)}B`);
                 } else {
                     // Fallback: 현실적인 L2 TVL 데이터
-                    console.log('   L2 TVL: Using fallback (Supabase data invalid)');
+                    console.log(`   ⚠️ L2 TVL: Using fallback (validation failed: points=${l2DataPoints}, value=$${(latestL2Value/1e9).toFixed(2)}B)`);
                     state.l2Tvl = 45000000000;
                     state.l2History = [];
                     for (let i = 1095; i >= 0; i--) {
@@ -20833,15 +20885,17 @@
         function setDataSource(chartId, source, apiName = '', actualSource = '') {
             try {
                 // actualSource: Supabase에 저장된 데이터의 실제 소스 (etherscan, defillama, estimated 등)
-                // source가 'supabase'인 경우 actualSource에 따라 라벨 결정
+                // source가 'supabase'인 경우에도 actualSource가 'estimated'면 Est. 배지 표시
                 
                 // 메인 가격 차트는 별도 처리
                 if (chartId === 'price-chart') {
                     const sourceEl = document.getElementById('price-chart-source');
                     if (sourceEl) {
                         sourceEl.className = 'price-chart-source';
-                        if (source === 'supabase') {
-                            // Supabase에서 가져온 데이터는 모두 Cached로 표시
+                        if (actualSource === 'estimated') {
+                            sourceEl.classList.add('fallback');
+                            sourceEl.textContent = 'Est.';
+                        } else if (source === 'supabase') {
                             sourceEl.classList.add('cached');
                             sourceEl.textContent = 'Cached';
                         } else if (source === 'api') {
@@ -20877,8 +20931,12 @@
                 const badge = document.createElement('span');
                 badge.className = 'data-source-badge';
                 
-                if (source === 'supabase') {
-                    // Supabase에서 가져온 데이터는 모두 Cached로 표시
+                // actualSource가 'estimated'면 항상 Est. 배지
+                if (actualSource === 'estimated') {
+                    badge.classList.add('fallback');
+                    badge.textContent = 'Est.';
+                } else if (source === 'supabase') {
+                    // Supabase에서 가져온 실제 데이터는 Cached로 표시
                     badge.classList.add('cached');
                     badge.textContent = 'Cached';
                 } else if (source === 'api') {
