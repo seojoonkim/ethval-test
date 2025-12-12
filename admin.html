@@ -254,23 +254,73 @@
                     const lines = text.trim().split('\n');
                     const records = [];
                     
+                    console.log(`[${type}] First 3 lines:`, lines.slice(0, 3));
+                    
                     // Skip header, parse data
                     for (let i = 1; i < lines.length; i++) {
                         const line = lines[i].trim();
                         if (!line) continue;
                         
-                        // Etherscan CSV format: "Date(UTC)","UnixTimeStamp","Value"
-                        // Or variations like: Date(UTC),UnixTimeStamp,Value
-                        const parts = line.replace(/"/g, '').split(',');
-                        if (parts.length < 3) continue;
+                        // Handle CSV with quoted fields containing commas
+                        let parts;
                         
-                        const dateStr = parts[0]; // "12/11/2025" or "2025-12-11"
-                        const timestamp = parseInt(parts[1]);
-                        const value = parseFloat(parts[2]);
+                        // Check if line has quoted fields
+                        if (line.includes('"')) {
+                            // Parse quoted CSV properly
+                            parts = [];
+                            let current = '';
+                            let inQuotes = false;
+                            
+                            for (let c of line) {
+                                if (c === '"') {
+                                    inQuotes = !inQuotes;
+                                } else if (c === ',' && !inQuotes) {
+                                    parts.push(current.trim());
+                                    current = '';
+                                } else {
+                                    current += c;
+                                }
+                            }
+                            parts.push(current.trim());
+                        } else {
+                            parts = line.split(',');
+                        }
                         
-                        if (isNaN(value)) continue;
+                        // Support both 2-column (Date, Value) and 3-column (Date, Timestamp, Value) formats
+                        if (parts.length < 2) {
+                            console.log(`[${type}] Skipping line ${i}: not enough parts`, parts);
+                            continue;
+                        }
                         
-                        // Convert date format
+                        const dateStr = parts[0].replace(/"/g, '');
+                        let timestamp, valueStr;
+                        
+                        if (parts.length === 2) {
+                            // 2-column format: Date, Value (no timestamp)
+                            valueStr = parts[1].replace(/"/g, '').replace(/,/g, '');
+                            // Generate timestamp from date
+                            let dateObj;
+                            if (dateStr.includes('/')) {
+                                const [m, d, y] = dateStr.split('/');
+                                dateObj = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+                            } else {
+                                dateObj = new Date(dateStr);
+                            }
+                            timestamp = Math.floor(dateObj.getTime() / 1000);
+                        } else {
+                            // 3-column format: Date, Timestamp, Value
+                            timestamp = parseInt(parts[1].replace(/"/g, ''));
+                            valueStr = parts[2].replace(/"/g, '').replace(/,/g, '');
+                        }
+                        
+                        const value = parseFloat(valueStr);
+                        
+                        if (isNaN(value)) {
+                            console.log(`[${type}] Skipping line ${i}: invalid value`, valueStr);
+                            continue;
+                        }
+                        
+                        // Convert date format to ISO
                         let isoDate;
                         if (dateStr.includes('/')) {
                             // MM/DD/YYYY format
@@ -296,6 +346,7 @@
                     log(`📁 ${type.toUpperCase()}: Parsed ${records.length} records from CSV`, 'success');
                     
                 } catch (err) {
+                    console.error(`[${type}] Parse error:`, err);
                     const statusEl = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
                     statusEl.textContent = `✗ Parse error: ${err.message}`;
                     statusEl.className = 'csv-status error';
@@ -342,13 +393,16 @@
                     
                     if (csvData.gas) {
                         csvData.gas.forEach(r => {
+                            // Convert Wei to Gwei (Etherscan exports in Wei)
+                            const gasPriceGwei = r.value > 1e6 ? r.value / 1e9 : r.value;
+                            
                             if (mergedData.has(r.date)) {
-                                mergedData.get(r.date).avg_gas_price_gwei = r.value;
+                                mergedData.get(r.date).avg_gas_price_gwei = gasPriceGwei;
                             } else {
                                 mergedData.set(r.date, {
                                     date: r.date,
                                     eth_burnt: 0,
-                                    avg_gas_price_gwei: r.value,
+                                    avg_gas_price_gwei: gasPriceGwei,
                                     transaction_count: 0
                                 });
                             }
