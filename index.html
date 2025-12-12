@@ -12215,7 +12215,7 @@
                         new Chart(canvas, {
                             type: 'line',
                             data: {
-                                labels: sampledData.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                                labels: sampledData.map(d => fmt.chartLabel(d.date)),
                                 datasets: [{
                                     data: sampledData.map(d => d.value),
                                     borderColor: chartColor,
@@ -12249,7 +12249,7 @@
                                     x: {
                                         display: true,
                                         grid: { display: false },
-                                        ticks: { color: '#8b949e', maxTicksLimit: 3, font: { size: 8 } }
+                                        ticks: { color: '#9ca3af', maxTicksLimit: 4, autoSkip: true, autoSkipPadding: 15, font: { size: 8 }, maxRotation: 0 }
                                     },
                                     y: {
                                         display: true,
@@ -12297,7 +12297,7 @@
                                 new Chart(canvas, {
                                     type: 'line',
                                     data: {
-                                        labels: sampledData.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                                        labels: sampledData.map(d => fmt.chartLabel(d.date)),
                                         datasets: [{
                                             data: sampledData.map(d => d.value),
                                             borderColor: chartColor,
@@ -12314,7 +12314,7 @@
                                         maintainAspectRatio: false,
                                         plugins: { legend: { display: false } },
                                         scales: {
-                                            x: { display: true, grid: { display: false }, ticks: { color: '#8b949e', maxTicksLimit: 3, font: { size: 8 } } },
+                                            x: { display: true, grid: { display: false }, ticks: { color: '#9ca3af', maxTicksLimit: 4, autoSkip: true, autoSkipPadding: 15, font: { size: 8 }, maxRotation: 0 } },
                                             y: { display: true, position: 'right', grid: { display: false }, ticks: { color: '#8b949e', font: { size: 8 }, maxTicksLimit: 3, callback: v => '$' + (v/1000).toFixed(1) + 'K' } }
                                         }
                                     }
@@ -14570,7 +14570,14 @@
             usd: (n, d=1) => n >= 1e12 ? '$'+(n/1e12).toFixed(d)+'T' : n >= 1e9 ? '$'+(n/1e9).toFixed(d)+'B' : n >= 1e6 ? '$'+(n/1e6).toFixed(d)+'M' : '$'+n.toFixed(d),
             num: (n, d=1) => n >= 1e9 ? (n/1e9).toFixed(d)+'B' : n >= 1e6 ? (n/1e6).toFixed(d)+'M' : n >= 1e3 ? (n/1e3).toFixed(d)+'K' : n.toFixed(d),
             pct: (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%',
-            price: (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+            price: (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+            // 차트 X축용 간결한 날짜 포맷: "Dec '22"
+            chartLabel: (d) => {
+                const date = d instanceof Date ? d : new Date(d);
+                const month = date.toLocaleDateString('en-US', { month: 'short' });
+                const year = date.getFullYear().toString().slice(-2);
+                return month + " '" + year;
+            }
         };
 
         // Animate number countup (lightweight requestAnimationFrame version)
@@ -14658,10 +14665,12 @@
                         display: true,
                         grid: { display: false },
                         ticks: { 
-                            color: '#8b949e', 
-                            maxTicksLimit: 4, 
-                            font: { size: axisFontSize.x }, 
-                            padding: 0,
+                            color: '#9ca3af', 
+                            maxTicksLimit: 5, 
+                            autoSkip: true,
+                            autoSkipPadding: 20,
+                            font: { size: 8 }, 
+                            padding: 2,
                             maxRotation: 0,
                             minRotation: 0
                         }
@@ -14672,9 +14681,9 @@
                         grid: { display: false },
                         ticks: { 
                             color: '#9ca3af', 
-                            font: { size: axisFontSize.y },
-                            maxTicksLimit: 3,
-                            padding: 0,
+                            font: { size: 8 },
+                            maxTicksLimit: 4,
+                            padding: 2,
                             mirror: false,
                             callback: function(value) {
                                 if (yAxisFormat === 'pct') return value.toFixed(0) + '%';
@@ -14740,13 +14749,13 @@
                     x: {
                         display: true,
                         grid: { color: '#e1e4e8' },
-                        ticks: { color: '#8b949e', maxTicksLimit: 5, font: { size: 9 } }
+                        ticks: { color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 20, font: { size: 9 }, maxRotation: 0 }
                     },
                     y: {
                         display: true,
                         position: 'right',
                         grid: { color: '#e1e4e8' },
-                        ticks: { color: '#8b949e', font: { size: 9 }, callback: v => '$'+(v>=1000?(v/1000).toFixed(1)+'K':v) }
+                        ticks: { color: '#9ca3af', font: { size: 9 }, callback: v => '$'+(v>=1000?(v/1000).toFixed(1)+'K':v) }
                     }
                 }
             }
@@ -15299,7 +15308,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value);
             
             // Color based on positive/negative
@@ -15333,14 +15342,14 @@
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 }
+                            ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 }
                         },
                         y: {
                             display: true,
                             position: 'right',
                             grid: { display: false },
                             ticks: {
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 color: '#9ca3af',
                                 maxTicksLimit: 4,
                                 callback: (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
@@ -15467,7 +15476,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 90));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value);
             
             volatilityChart = new Chart(ctx.getContext('2d'), {
@@ -15499,14 +15508,14 @@
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 }
+                            ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 }
                         },
                         y: {
                             display: true,
                             position: 'right',
                             grid: { display: false },
                             ticks: {
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 color: '#9ca3af',
                                 maxTicksLimit: 4,
                                 callback: (v) => v.toFixed(0) + '%'
@@ -15596,7 +15605,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 90));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value / 1e9);
             
             stablecoinChart = new Chart(ctx.getContext('2d'), {
@@ -15628,14 +15637,14 @@
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 }
+                            ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 }
                         },
                         y: {
                             display: true,
                             position: 'right',
                             grid: { display: false },
                             ticks: {
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 color: '#9ca3af',
                                 maxTicksLimit: 4,
                                 callback: (v) => '$' + v.toFixed(0) + 'B'
@@ -15747,7 +15756,7 @@
             
             if (fearGreedChart) fearGreedChart.destroy();
             
-            const labels = filtered.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = filtered.map(d => fmt.chartLabel(d.date));
             const values = filtered.map(d => d.value);
             
             // Gradient color based on value
@@ -15798,7 +15807,7 @@
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 }
+                            ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 }
                         },
                         y: {
                             display: true,
@@ -15807,7 +15816,7 @@
                             max: 100,
                             grid: { display: false },
                             ticks: {
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 color: '#9ca3af',
                                 maxTicksLimit: 3
                             }
@@ -16898,7 +16907,7 @@
             
             const data = state.reserveHistory.map(d => d.value);
             const labels = state.reserveHistory.map(d => 
-                d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                fmt.chartLabel(d.date)
             );
             
             if (reserveChart) reserveChart.destroy();
@@ -16934,7 +16943,7 @@
             
             const priceData = sampledPrices.map(d => d.value);
             const volumeData = sampledVolumes.map(d => d.value);
-            const labels = sampledPrices.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampledPrices.map(d => fmt.chartLabel(d.date));
             
             console.log(`Updating combined chart: ${days} days, ${priceData.length} points`);
             
@@ -17041,8 +17050,10 @@
                             grid: { display: false },
                             ticks: {
                                 font: { size: 8 },
-                                color: '#6b7280',
-                                maxTicksLimit: 6,
+                                color: '#9ca3af',
+                                maxTicksLimit: 5,
+                                autoSkip: true,
+                                autoSkipPadding: 20,
                                 maxRotation: 0
                             }
                         },
@@ -17051,7 +17062,7 @@
                             grid: { color: 'rgba(0,0,0,0.05)' },
                             ticks: {
                                 font: { size: 8 },
-                                color: '#6b7280',
+                                color: '#9ca3af',
                                 callback: v => '$' + (v/1000).toFixed(1) + 'K'
                             }
                         },
@@ -17497,7 +17508,7 @@
                     const defiPctVal = (ethInDefi / estSupply) * 100;
                     const liquidPctVal = Math.max(0, 100 - stakePctVal - defiPctVal);
                     
-                    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+                    labels.push(fmt.chartLabel(date));
                     
                     // Individual values for stacked chart
                     stakingValues.push(stakePctVal);
@@ -17565,9 +17576,11 @@
                                 display: true,
                                 grid: { display: false },
                                 ticks: {
-                                    font: { size: 7 },
+                                    font: { size: 8 },
                                     color: '#9ca3af',
                                     maxTicksLimit: 5,
+                                    autoSkip: true,
+                                    autoSkipPadding: 15,
                                     maxRotation: 0
                                 }
                             },
@@ -17579,7 +17592,7 @@
                                 max: 100,
                                 grid: { display: false },
                                 ticks: {
-                                    font: { size: 7 },
+                                    font: { size: 8 },
                                     color: '#9ca3af',
                                     maxTicksLimit: 3,
                                     callback: (v) => v + '%'
@@ -17720,7 +17733,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value / 1e9);
             
             lendingChart = new Chart(ctx.getContext('2d'), {
@@ -17752,14 +17765,14 @@
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 }
+                            ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 }
                         },
                         y: {
                             display: true,
                             position: 'right',
                             grid: { display: false },
                             ticks: {
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 color: '#9ca3af',
                                 maxTicksLimit: 4,
                                 callback: (v) => '$' + v.toFixed(0) + 'B'
@@ -17891,7 +17904,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value);
             
             gasPriceChart = new Chart(ctx.getContext('2d'), {
@@ -17916,8 +17929,8 @@
                         tooltip: { callbacks: { label: (ctx) => ctx.raw.toFixed(1) + ' Gwei' } }
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
                     }
                 }
             });
@@ -18196,7 +18209,7 @@
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
             const sampled = filtered.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampled.map(d => fmt.chartLabel(d.date));
             const values = sampled.map(d => d.value);
             
             blobFeesChart = new Chart(ctx.getContext('2d'), {
@@ -18221,8 +18234,8 @@
                         tooltip: { callbacks: { label: (ctx) => ctx.raw.toFixed(1) + ' ETH' } }
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
                     }
                 }
             });
@@ -18341,7 +18354,7 @@
             baseFeeChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#06b6d4',
@@ -18360,8 +18373,8 @@
                         tooltip: { callbacks: { label: (ctx) => ctx.raw.toFixed(1) + ' Gwei' } }
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) } }
                     }
                 }
             });
@@ -18471,7 +18484,7 @@
             blobCountChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#8b5cf6',
@@ -18490,8 +18503,8 @@
                         tooltip: { callbacks: { label: (ctx) => fmt.num(ctx.raw) + ' blobs' } }
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
                     }
                 }
             });
@@ -18683,7 +18696,7 @@
             gasUtilizationChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#f43f5e',
@@ -18699,8 +18712,8 @@
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ctx.raw.toFixed(1) + '%' } } },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) + '%' } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(0) + '%' } }
                     }
                 }
             });
@@ -18735,7 +18748,7 @@
             dailyBurnChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#f97316',
@@ -18765,8 +18778,8 @@
                         }
                     },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
                     }
                 }
             });
@@ -18801,7 +18814,7 @@
             dailyIssuanceChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#22c55e',
@@ -18817,8 +18830,8 @@
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmt.num(ctx.raw) + ' ETH' } } },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => fmt.num(v) } }
                     }
                 }
             });
@@ -18850,7 +18863,7 @@
             netSupplyChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: sampled.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    labels: sampled.map(d => fmt.chartLabel(d.date)),
                     datasets: [{
                         data: sampled.map(d => d.value),
                         borderColor: '#8b5cf6',
@@ -18866,8 +18879,8 @@
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ctx.raw.toFixed(2) + '%/yr' } } },
                     scales: {
-                        x: { display: true, grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 5, maxRotation: 0 } },
-                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 7 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(1) + '%' } }
+                        x: { display: true, grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 5, autoSkip: true, autoSkipPadding: 15, maxRotation: 0 } },
+                        y: { display: true, position: 'right', grid: { display: false }, ticks: { font: { size: 8 }, color: '#9ca3af', maxTicksLimit: 4, callback: (v) => v.toFixed(1) + '%' } }
                     }
                 }
             });
@@ -18948,7 +18961,7 @@
                 dominanceChart = new Chart(ctx.getContext('2d'), chartConfig(
                     '#0891b2',
                     history.map(d => d.value),
-                    history.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    history.map(d => fmt.chartLabel(d.date)),
                     (v) => v.toFixed(1) + '%',
                     'pct'
                 ));
@@ -19005,7 +19018,7 @@
                 ethbtcChart = new Chart(ctx.getContext('2d'), chartConfig(
                     '#f7931a',
                     history.map(d => d.value),
-                    history.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                    history.map(d => fmt.chartLabel(d.date)),
                     (v) => v.toFixed(5),
                     'ratio'
                 ));
@@ -19083,7 +19096,7 @@
             const chart = new Chart(ctx.getContext('2d'), chartConfig(
                 color, 
                 history.map(d => d.value), 
-                history.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                history.map(d => fmt.chartLabel(d.date)),
                 formatFn,
                 yAxisFormat
             ));
@@ -19817,7 +19830,7 @@
             dominanceChart = new Chart(ctx.getContext('2d'), chartConfig(
                 '#0891b2',
                 filtered.map(d => d.value),
-                filtered.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                filtered.map(d => fmt.chartLabel(d.date)),
                 (v) => v.toFixed(1) + '%'
             ));
             
@@ -19847,7 +19860,7 @@
             ethbtcChart = new Chart(ctx.getContext('2d'), chartConfig(
                 '#f7931a',
                 filtered.map(d => d.value),
-                filtered.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                filtered.map(d => fmt.chartLabel(d.date)),
                 (v) => v.toFixed(5)
             ));
             
@@ -19877,7 +19890,7 @@
             reserveChart = new Chart(ctx.getContext('2d'), chartConfig(
                 '#d97706',
                 filtered.map(d => d.value),
-                filtered.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
+                filtered.map(d => fmt.chartLabel(d.date)),
                 (v) => fmt.num(v) + ' ETH',
                 'eth'
             ));
@@ -20275,6 +20288,7 @@
                 setEl('fees-value', '$' + ((state.fees * 7) / 1e6).toFixed(1) + 'M');
                 safeCall(() => updateMetricChart('fees-chart', feesChart, state.feesHistory, '#f97316', 'fees'), 'fees');
                 setDataSource('fees-chart', feesSource, 'DefiLlama');
+                setChange('fees-change', state.feesHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 6. DEX Volume (주간)
@@ -21884,7 +21898,7 @@ Check out ETHval 👇`;
             const sampleRate = Math.max(1, Math.floor(priceData.length / 100));
             const sampledPrice = priceData.filter((_, i, arr) => i % sampleRate === 0 || i === arr.length - 1);
             
-            const labels = sampledPrice.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampledPrice.map(d => fmt.chartLabel(d.date));
             
             // All 12 models
             // Use MODEL_ORDER for consistent ordering
@@ -22248,7 +22262,7 @@ Check out ETHval 👇`;
             
             if (methodCharts[model]) methodCharts[model].destroy();
             
-            const labels = sampledData.map(d => d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
+            const labels = sampledData.map(d => fmt.chartLabel(d.date));
             
             methodCharts[model] = new Chart(ctx.getContext('2d'), {
                 type: 'line',
@@ -22294,7 +22308,7 @@ Check out ETHval 👇`;
                         x: {
                             display: true,
                             grid: { display: false },
-                            ticks: { color: '#8b949e', maxTicksLimit: 3, font: { size: 7 } }
+                            ticks: { color: '#8b949e', maxTicksLimit: 3, font: { size: 8 } }
                         },
                         y: {
                             display: true,
@@ -22302,7 +22316,7 @@ Check out ETHval 👇`;
                             grid: { display: false },
                             ticks: {
                                 color: '#8b949e',
-                                font: { size: 7 },
+                                font: { size: 8 },
                                 maxTicksLimit: 3,
                                 callback: v => '$' + (v/1000).toFixed(1) + 'K'
                             }
