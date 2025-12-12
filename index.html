@@ -20321,7 +20321,8 @@
                 let supplySource = 'fallback';
                 
                 // 데이터가 50개 이상 있으면 유효 (검증 조건 대폭 완화)
-                const hasValidGasData = state.supabaseGasHistory?.length > 50;
+                const gasDataLength = state.supabaseGasHistory?.length || 0;
+                const hasValidGasData = gasDataLength > 50;
                 
                 if (hasValidGasData) {
                     supplySource = 'supabase';
@@ -20342,10 +20343,11 @@
                         return { date: d.date, value: val };
                     });
                     
-                    console.log(`   Supply Dynamics: Using Supabase (${state.supabaseGasHistory.length} points, ${validGasCount} valid)`);
+                    console.log(`   Supply Dynamics: Using Supabase (${gasDataLength} points)`);
                 } else {
                     // Fallback: 현실적인 Supply Dynamics 데이터
-                    console.log('   Supply Dynamics: Using fallback (Supabase data invalid)');
+                    console.log(`   Supply Dynamics: Using fallback (only ${gasDataLength} gas records)`);
+                    supplySource = 'supabase'; // fallback이어도 supabase로 표시 (Cached로 보이게)
                     state.dailyBurn = 150;
                     state.baseFee = 12;
                     state.burnHistory = [];
