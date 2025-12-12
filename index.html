@@ -20324,17 +20324,17 @@
                 // ═══════════════════════════════════════════════════════════════════
                 let fearGreedSource = 'fallback';
                 if (state.supabaseFearGreedHistory?.length > 0) {
-                    state.fearGreedHistory = state.supabaseFearGreedHistory;
-                    state.fearGreedIndex = state.fearGreedHistory[state.fearGreedHistory.length - 1].value;
+                    state.fgHistory = state.supabaseFearGreedHistory;
+                    state.fearGreed = state.fgHistory[state.fgHistory.length - 1].value;
                     fearGreedSource = 'supabase';
-                } else if (!state.fearGreedHistory?.length) {
-                    state.fearGreedIndex = 65;
-                    state.fearGreedHistory = [];
+                } else if (!state.fgHistory?.length) {
+                    state.fearGreed = 65;
+                    state.fgHistory = [];
                     for (let i = 365; i >= 0; i--) {
-                        state.fearGreedHistory.push({ date: new Date(Date.now() - i * 86400000), value: 30 + Math.random() * 50 });
+                        state.fgHistory.push({ date: new Date(Date.now() - i * 86400000), value: 30 + Math.random() * 50 });
                     }
                 }
-                setEl('fear-greed', Math.round(state.fearGreedIndex));
+                setEl('fear-greed', Math.round(state.fearGreed));
                 safeCall(() => updateFearGreedChart(), 'fearGreed');
                 setDataSource('feargreed-chart', fearGreedSource, 'Alternative.me');
                 
@@ -20824,11 +20824,8 @@
                     apiCalls.push(fetchDominanceAndEthBtc(1095));
                 }
                 
-                // Fear & Greed - Supabase 없으면 외부 API
-                if (!state.supabaseFearGreedHistory?.length || state.supabaseFearGreedHistory.length < MIN_DATA_POINTS) {
-                    console.log('   → Fear & Greed data missing, fetching from API');
-                    apiCalls.push(fetchFearGreed());
-                }
+                // Fear & Greed - 항상 호출 (fgHistory 설정 필요)
+                apiCalls.push(fetchFearGreed());
                 
                 // 필요한 API들만 병렬 호출
                 if (apiCalls.length > 0) {
