@@ -9212,7 +9212,7 @@
                 <div class="metric-card" data-metric="daily-issuance">
                     <div class="metric-header">
                         <div class="metric-info">
-                            <h4>Daily Issuance <span id="issuance-source-badge" class="data-source-badge" style="font-size: 10px; padding: 1px 4px; margin-left: 4px;">Est.</span></h4>
+                            <h4>Daily Issuance</h4>
                             <div class="metric-value-large issuance-color" id="daily-issuance-value">-- ETH</div>
                         </div>
                         <div class="metric-tabs" data-chart="daily-issuance">
@@ -9278,7 +9278,7 @@
                 <div class="metric-card" data-metric="blobFees">
                     <div class="metric-header">
                         <div class="metric-info">
-                            <h4>Blob Fees (7d)</h4>
+                            <h4>Blob Fees (7d) <span class="source-badge estimated" id="blob-fees-source">Est.</span></h4>
                             <div class="metric-value-large" id="blob-fees-value">-- ETH</div>
                         </div>
                         <div class="metric-tabs" data-chart="blobFees">
@@ -9299,7 +9299,7 @@
                 <div class="metric-card" data-metric="blobCount">
                     <div class="metric-header">
                         <div class="metric-info">
-                            <h4>Blob Count (7d)</h4>
+                            <h4>Blob Count (7d) <span class="source-badge estimated" id="blob-count-source">Est.</span></h4>
                             <div class="metric-value-large" id="blob-count-value">--</div>
                         </div>
                         <div class="metric-tabs" data-chart="blobCount">
@@ -14394,8 +14394,8 @@
         function filterNvtData(data) {
             return filterOutliers(data, {
                 maxChangePercent: 100,    // NVT can be more volatile
-                minValue: 5,              // NVT can go below 20 in bull markets
-                maxValue: 500,            // NVT can spike higher
+                minValue: 20,             // NVT rarely below 20
+                maxValue: 200,            // NVT rarely above 200
                 useIQR: true,
                 iqrMultiplier: 2.5
             });
@@ -14829,10 +14829,10 @@
                 
                 // 모든 테이블 병렬 로딩
                 const [priceData, tvlData, stakingData, gasData, activeData, supplyData, fgData, feesData,
-                       ethBtcData, dominanceData, dexData, stablesData, stablesEthData, fundingData, reserveData, blobData, lendingData, volatilityData, l2TvlData, nvtData, stakingAprData, txData, issuanceData] = await Promise.all([
+                       ethBtcData, dominanceData, dexData, stablesData, stablesEthData, fundingData, reserveData, blobData, lendingData, volatilityData, l2TvlData, nvtData] = await Promise.all([
                     safeFetchSupabase(`${baseUrl}/historical_eth_price?select=date,close,volume&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_ethereum_tvl?select=date,tvl&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_staking?select=date,total_staked_eth,avg_apr,total_validators,source&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_staking?select=date,total_staked_eth,avg_apr,total_validators&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_gas_burn?select=date,avg_gas_price_gwei,eth_burnt,transaction_count&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_active_addresses?select=date,active_addresses&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_eth_supply?select=date,eth_supply,eth2_staking,burnt_fees&order=date.desc&limit=${limit}`),
@@ -14844,15 +14844,12 @@
                     safeFetchSupabase(`${baseUrl}/historical_stablecoins?select=date,total_mcap&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_stablecoins_eth?select=date,total_mcap&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_funding_rate?select=date,funding_rate&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_exchange_reserve?select=date,reserve_eth,source&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_blob_data?select=date,blob_count,blob_fee_eth,source&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_exchange_reserve?select=date,reserve_eth&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_blob_data?select=date,blob_count,blob_fee_eth&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_lending_tvl?select=date,total_tvl&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_volatility?select=date,volatility_30d&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_l2_tvl?select=date,chain,tvl&order=date.desc&limit=${limit * 10}`),
-                    safeFetchSupabase(`${baseUrl}/historical_nvt?select=date,nvt_ratio&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_staking_apr?select=date,lido_apr&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_transactions?select=date,tx_count&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_daily_issuance?select=date,daily_issuance,eth2_staking_cumulative,burnt_fees_cumulative&order=date.desc&limit=${limit}`)
+                    safeFetchSupabase(`${baseUrl}/historical_nvt?select=date,nvt_ratio&order=date.desc&limit=${limit}`)
                 ]);
                 
                 // 데이터 저장 (10개 이상일 때만)
@@ -14882,8 +14879,6 @@
                     state.supabaseGasHistory = gasData.map(d => ({
                         date: new Date(d.date), gasPrice: parseFloat(d.avg_gas_price_gwei || 0), burnt: parseFloat(d.eth_burnt || 0), txCount: parseInt(d.transaction_count || 0)
                     })).reverse();
-                    state.gasDataSource = 'supabase';
-                    console.log(`      Source: supabase (${gasData.length} records)`);
                 }
                 
                 if (activeData.length > 10) {
@@ -14953,8 +14948,6 @@
                 if (reserveData.length > 10) {
                     console.log(`   ✓ Reserve: ${reserveData.length} records`);
                     state.supabaseReserveHistory = reserveData.map(d => ({ date: new Date(d.date), value: parseFloat(d.reserve_eth) })).reverse();
-                    state.reserveDataSource = reserveData[0]?.source || 'unknown';
-                    console.log(`      Source: ${state.reserveDataSource}`);
                 }
                 
                 if (blobData.length > 10) {
@@ -14962,8 +14955,6 @@
                     state.supabaseBlobHistory = blobData.map(d => ({
                         date: new Date(d.date), count: parseInt(d.blob_count || 0), fees: parseFloat(d.blob_fee_eth || 0)
                     })).reverse();
-                    state.blobDataSource = blobData[0]?.source || 'unknown';
-                    console.log(`      Source: ${state.blobDataSource}`);
                 }
                 
                 if (lendingData.length > 10) {
@@ -14978,60 +14969,18 @@
                 
                 if (l2TvlData.length > 10) {
                     const l2ByDate = {};
-                    let maxTvl = 0;
                     l2TvlData.forEach(d => {
                         const dateKey = d.date;
-                        const tvl = parseFloat(d.tvl || 0);
                         if (!l2ByDate[dateKey]) l2ByDate[dateKey] = 0;
-                        l2ByDate[dateKey] += tvl;
-                        if (l2ByDate[dateKey] > maxTvl) maxTvl = l2ByDate[dateKey];
+                        l2ByDate[dateKey] += parseFloat(d.tvl || 0);
                     });
                     state.supabaseL2History = Object.entries(l2ByDate).map(([date, value]) => ({ date: new Date(date), value })).sort((a, b) => a.date - b.date);
-                    const latestL2 = state.supabaseL2History[state.supabaseL2History.length - 1]?.value || 0;
-                    console.log(`   ✓ L2: ${state.supabaseL2History.length} records, latest: $${(latestL2/1e9).toFixed(2)}B, max: $${(maxTvl/1e9).toFixed(2)}B`);
-                    
-                    // L2 데이터가 너무 낮으면 무시 (API 문제)
-                    if (latestL2 < 1e9) {
-                        console.warn('   ⚠️ L2 TVL too low, likely data issue - will use fallback');
-                        state.supabaseL2History = null;
-                    }
+                    console.log(`   ✓ L2: ${state.supabaseL2History.length} records`);
                 }
                 
                 if (nvtData.length > 10) {
                     console.log(`   ✓ NVT: ${nvtData.length} records`);
                     state.supabaseNvtHistory = nvtData.map(d => ({ date: new Date(d.date), value: parseFloat(d.nvt_ratio) })).reverse();
-                }
-                
-                if (stakingAprData.length > 10) {
-                    console.log(`   ✓ Staking APR: ${stakingAprData.length} records`);
-                    state.supabaseStakingAprHistory = stakingAprData.map(d => ({ date: new Date(d.date), value: parseFloat(d.lido_apr || 3.2) })).reverse();
-                }
-                
-                if (txData.length > 10) {
-                    console.log(`   ✓ Transactions: ${txData.length} records`);
-                    state.supabaseTransactionsHistory = txData.map(d => ({ date: new Date(d.date), value: parseInt(d.tx_count || 0) })).reverse();
-                    state.txDataSource = txData[0]?.source || 'unknown';
-                    console.log(`      Source: ${state.txDataSource}`);
-                }
-                
-                if (issuanceData.length > 0) {
-                    console.log(`   ✓ Daily Issuance: ${issuanceData.length} records`);
-                    state.supabaseIssuanceHistory = issuanceData.map(d => ({ 
-                        date: new Date(d.date), 
-                        daily_issuance: parseFloat(d.daily_issuance || 0),
-                        eth2_staking_cumulative: parseFloat(d.eth2_staking_cumulative || 0),
-                        burnt_fees_cumulative: parseFloat(d.burnt_fees_cumulative || 0)
-                    })).reverse();
-                    
-                    // Use latest issuance value if valid
-                    const latestIssuance = issuanceData[0]?.daily_issuance;
-                    if (latestIssuance > 500 && latestIssuance < 3500) {
-                        state.dailyIssuance = latestIssuance;
-                        state.dailyIssuanceSource = 'supabase';
-                        console.log(`      Latest: ${latestIssuance.toFixed(0)} ETH/day`);
-                    }
-                } else {
-                    console.log(`   ⚠ Daily Issuance: no data (table may not exist yet)`);
                 }
                 
                 // ═══════════════════════════════════════════════════════════════════
@@ -17966,81 +17915,134 @@
                 let blobCount = 0;
                 let dataSource = 'estimate';
                 
-                // === 1차: blobscan.com API (5초 타임아웃) ===
+                // === 1차: eth_feeHistory API - 실제 온체인 데이터 (무료) ===
                 try {
-                    const data = await safeFetch('https://api.blobscan.com/stats', 5000);
-                    if (data) {
-                        blobFees = data.totalBlobFees ? data.totalBlobFees / 1e18 : 0;
-                        blobCount = data.totalBlobs || 0;
-                        if (blobFees > 0 || blobCount > 0) dataSource = 'blobscan';
+                    // Etherscan proxy를 통해 eth_feeHistory 호출 (최근 1024 블록)
+                    const feeHistoryUrl = 'https://api.etherscan.io/v2/api?chainid=1&module=proxy&action=eth_feeHistory&blockcount=0x400&newestblock=latest&rewardpercentiles=[]&apikey=' + (state.etherscanApiKey || 'YourApiKeyToken');
+                    
+                    const response = await safeFetch(feeHistoryUrl, 8000);
+                    
+                    if (response && response.result) {
+                        const result = response.result;
+                        const blobGasUsedRatios = result.blobGasUsedRatio || [];
+                        const baseFeePerBlobGas = result.baseFeePerBlobGas || [];
+                        
+                        if (blobGasUsedRatios.length > 0 && baseFeePerBlobGas.length > 0) {
+                            // Constants
+                            const MAX_BLOB_GAS_PER_BLOCK = 786432; // 6 blobs * 131072 gas per blob
+                            const GAS_PER_BLOB = 131072;
+                            
+                            let totalBlobGasUsed = 0;
+                            let totalBlobFees = 0;
+                            
+                            for (let i = 0; i < blobGasUsedRatios.length; i++) {
+                                const ratio = blobGasUsedRatios[i];
+                                const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
+                                totalBlobGasUsed += blobGasUsed;
+                                
+                                // baseFeePerBlobGas is in wei (hex)
+                                if (baseFeePerBlobGas[i]) {
+                                    const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16);
+                                    totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
+                                }
+                            }
+                            
+                            // Calculate blob count from gas used
+                            const totalBlobCount = totalBlobGasUsed / GAS_PER_BLOB;
+                            
+                            // Scale from 1024 blocks (~3.4 hours) to 7 days
+                            // 1024 blocks / 7200 blocks per day ≈ 0.142 days
+                            // 7 days = 50,400 blocks
+                            const scaleFactor = 7 * 7200 / 1024; // ≈ 49.2x
+                            
+                            blobFees = totalBlobFees * scaleFactor;
+                            blobCount = totalBlobCount * scaleFactor;
+                            
+                            if (blobFees > 0 || blobCount > 0) {
+                                dataSource = 'feeHistory';
+                                console.log(`   eth_feeHistory: ${blobGasUsedRatios.length} blocks sampled`);
+                                console.log(`   Raw (1024 blks): ${totalBlobFees.toFixed(4)} ETH, ${Math.round(totalBlobCount)} blobs`);
+                            }
+                        }
                     }
                 } catch (e) {
-                    console.log('blobscan API failed, trying etherscan...');
+                    console.log('eth_feeHistory API failed:', e.message);
                 }
                 
-                // === 2차: Etherscan blob gas API (5초 타임아웃) ===
+                // === 2차: blobscan.com API (fallback) ===
                 if (blobFees === 0) {
                     try {
-                        const data = await safeFetch('https://api.etherscan.io/api?module=stats&action=dailyavgblocksize&startdate=2024-03-13&enddate=2024-12-31&sort=desc', 5000);
-                        if (data) dataSource = 'etherscan-estimate';
+                        const data = await safeFetch('https://api.blobscan.com/stats', 5000);
+                        if (data) {
+                            blobFees = data.totalBlobFees ? data.totalBlobFees / 1e18 : 0;
+                            blobCount = data.totalBlobs || 0;
+                            if (blobFees > 0 || blobCount > 0) dataSource = 'blobscan';
+                        }
                     } catch (e) {
-                        console.log('Etherscan blob API failed...');
+                        console.log('blobscan API failed...');
                     }
                 }
                 
-                // === 3차: L2 TVL 기반 추정 (실제 데이터 참조) ===
+                // === 3차: L2 TVL 기반 추정 ===
                 if (blobFees === 0) {
-                    // Real data reference (Nov 2024): ~166 ETH burned in one week during high activity
-                    // Normal weeks: 30-100 ETH/week
-                    // High activity: 100-500 ETH/week
                     const l2Tvl = state.l2Tvl || 45000000000;
-                    
-                    // Blob fees correlate with L2 activity (higher TVL = more blobs = more fees)
-                    // At $45B TVL, typical weekly fees: ~50-150 ETH
-                    // Formula: (TVL in billions) × 2-3 = weekly ETH fees
-                    blobFees = (l2Tvl / 1e9) * 2.5;
-                    
-                    // Add some variance based on time
-                    const dayOfWeek = new Date().getDay();
-                    const variance = 0.8 + (dayOfWeek * 0.05); // 0.8 - 1.1
-                    blobFees = Math.max(30, blobFees * variance);
+                    // Real data reference (Nov-Dec 2024):
+                    // - Normal weeks: 50-100 ETH/week
+                    // - High activity: 100-200 ETH/week
+                    // - Average blobs: ~21,000/day = ~147,000/week
+                    blobFees = (l2Tvl / 1e9) * 2.5; // ~112 ETH at $45B TVL
+                    blobFees = Math.max(50, Math.min(200, blobFees));
+                    blobCount = (l2Tvl / 1e9) * 3300; // ~147K at $45B TVL
                 }
                 
-                console.log(`Blob Fees source: ${dataSource}, Weekly: ${blobFees.toFixed(1)} ETH`);
+                console.log(`Blob Fees source: ${dataSource}, Weekly: ${blobFees.toFixed(1)} ETH, Count: ${fmt.num(blobCount)}`);
                 
                 state.blobFees = blobFees;
+                state.blobCount = blobCount;
+                state.blobDataSource = dataSource;
                 state.blobFeesHistory = [];
+                state.blobCountHistory = [];
                 
-                // Build history from L2 TVL (proxy)
+                // Build history from L2 TVL (proxy) - calibrated to current values
                 if (state.l2History && state.l2History.length > 0) {
                     const dencunDate = new Date('2024-03-13').getTime();
+                    const currentL2Tvl = state.l2Tvl || 45000000000;
                     
                     for (let i = 6; i < state.l2History.length; i++) {
                         const d = state.l2History[i];
                         if (d.date.getTime() < dencunDate) continue;
                         
                         const l2Val = d.value / 1e9;
-                        const estimatedFees = l2Val * 0.3;
+                        const currentL2Val = currentL2Tvl / 1e9;
+                        
+                        // Scale historical values proportionally to current real data
+                        const scaledFees = (l2Val / currentL2Val) * blobFees;
+                        const scaledCount = (l2Val / currentL2Val) * blobCount;
                         
                         state.blobFeesHistory.push({
                             date: d.date,
-                            value: estimatedFees
+                            value: scaledFees
+                        });
+                        state.blobCountHistory.push({
+                            date: d.date,
+                            value: scaledCount
                         });
                     }
                 } else {
-                    // Fallback: Generate simulated blob fees history since Dencun (Mar 13, 2024)
+                    // Fallback: Generate simulated blob history since Dencun (Mar 13, 2024)
                     const dencunDate = new Date('2024-03-13');
                     const today = new Date();
                     const daysSinceDencun = Math.floor((today - dencunDate) / (24 * 60 * 60 * 1000));
                     
                     for (let i = 0; i <= Math.min(daysSinceDencun, 300); i++) {
                         const date = new Date(dencunDate.getTime() + i * 24 * 60 * 60 * 1000);
-                        const variance = 0.7 + Math.random() * 0.6;
-                        const trend = 1 + (i / daysSinceDencun) * 0.5; // growing trend
-                        state.blobFeesHistory.push({
-                            date,
-                            value: 25 * variance * trend
-                        });
+                        const progress = i / daysSinceDencun;
+                        // Calibrate to current values with growth trend
+                        const feesValue = blobFees * (0.3 + 0.7 * progress);
+                        const countValue = blobCount * (0.3 + 0.7 * progress);
+                        
+                        state.blobFeesHistory.push({ date, value: feesValue });
+                        state.blobCountHistory.push({ date, value: countValue });
                     }
                 }
                 
@@ -18049,8 +18051,34 @@
                     blobEl.textContent = blobFees.toFixed(1) + ' ETH';
                 }
                 
+                // Blob Count UI도 같이 업데이트
+                const blobCountEl = document.getElementById('blob-count-value');
+                if (blobCountEl) {
+                    blobCountEl.textContent = fmt.num(blobCount);
+                }
+                
+                // 데이터 소스 배지 업데이트
+                const sourceBadgeMap = {
+                    'feeHistory': { text: 'API', class: 'source-badge api' },
+                    'blobscan': { text: 'API', class: 'source-badge api' },
+                    'estimate': { text: 'Est.', class: 'source-badge estimated' }
+                };
+                const badge = sourceBadgeMap[dataSource] || sourceBadgeMap['estimate'];
+                
+                const blobFeesBadge = document.getElementById('blob-fees-source');
+                if (blobFeesBadge) {
+                    blobFeesBadge.textContent = badge.text;
+                    blobFeesBadge.className = badge.class;
+                }
+                const blobCountBadge = document.getElementById('blob-count-source');
+                if (blobCountBadge) {
+                    blobCountBadge.textContent = badge.text;
+                    blobCountBadge.className = badge.class;
+                }
+                
                 updateBlobFeesChart();
-                console.log('   Blob Fees (7d):', blobFees.toFixed(1), 'ETH');
+                updateBlobCountChart();
+                console.log('   Blob Fees (7d):', blobFees.toFixed(1), 'ETH | Count:', fmt.num(blobCount));
             } catch (e) {
                 console.error('Blob fees error:', e);
             }
@@ -18063,16 +18091,12 @@
             
             const history = state.blobFeesHistory || [];
             const cutoffDate = Date.now() - (days * 24 * 60 * 60 * 1000);
-            
-            // Blobs only exist since Dencun (March 13, 2024)
-            const dencunDate = new Date('2024-03-13').getTime();
-            const effectiveCutoff = Math.max(cutoffDate, dencunDate);
-            const filtered = history.filter(d => d.date.getTime() > effectiveCutoff);
+            const filtered = history.filter(d => d.date.getTime() > cutoffDate);
             
             setChartLoading('blob-fees-chart', false);
             
             if (filtered.length < 3) {
-                // Show "Since Dencun" message
+                // Show "No data before Dencun" message
                 const changeEl = document.getElementById('blob-fees-change');
                 if (changeEl) {
                     changeEl.textContent = 'Since Mar 2024';
@@ -18083,32 +18107,13 @@
             
             const latest = filtered[filtered.length - 1].value;
             const oldest = filtered[0].value;
-            
-            // Calculate change - handle cases where oldest is 0 or very small
-            let change = 0;
-            let changeLabel = '';
-            
-            // Determine actual period covered by data
-            const actualDays = Math.round((filtered[filtered.length - 1].date - filtered[0].date) / 86400000);
-            
-            if (oldest > 0.001) {  // Only calculate if oldest is meaningful
-                change = ((latest - oldest) / oldest) * 100;
-                if (actualDays < 100) changeLabel = `${actualDays}D`;
-                else if (actualDays < 400) changeLabel = `${Math.round(actualDays / 30)}M`;
-                else changeLabel = 'Since Dencun';
-            } else {
-                changeLabel = 'Since Dencun';
-            }
+            const change = oldest > 0 ? ((latest - oldest) / oldest) * 100 : 0;
             
             const changeEl = document.getElementById('blob-fees-change');
             if (changeEl) {
-                if (changeLabel === 'Since Dencun' || Math.abs(change) > 1000) {
-                    changeEl.textContent = 'Since Mar 2024';
-                    changeEl.className = 'change';
-                } else {
-                    changeEl.textContent = fmt.pct(change) + ' ' + changeLabel;
-                    changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
-                }
+                const periodLabel = days === 90 ? '90D' : days === 365 ? 'YoY' : '3Y';
+                changeEl.textContent = fmt.pct(change) + ' ' + periodLabel;
+                changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
             }
             
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
@@ -18166,69 +18171,49 @@
                     console.log('Etherscan base fee API failed...');
                 }
                 
-                // === 2차: Supabase gas history 최신값 사용 ===
-                if (currentBaseFee === 0 && state.supabaseGasHistory && state.supabaseGasHistory.length > 0) {
-                    // Use the most recent gas price, apply base fee factor
-                    // Base fee is typically 70-90% of total gas price depending on network conditions
-                    // In low activity: base fee ≈ 85-95% of gas price
-                    // In high activity: base fee ≈ 60-80% of gas price
-                    const recentGas = state.supabaseGasHistory.slice(-7);
-                    const avgGasPrice = recentGas.reduce((sum, d) => sum + d.gasPrice, 0) / recentGas.length;
-                    // In current low-fee environment (Dec 2024), base fee is very close to gas price
-                    currentBaseFee = avgGasPrice * 0.90;
-                    dataSource = 'supabase';
-                }
-                
-                // === 3차: Gas price에서 추정 (fallback) ===
+                // === 2차: Gas price에서 추정 ===
                 if (currentBaseFee === 0) {
-                    // Dec 2024 typical base fee: 1-10 Gwei
-                    const gasPrice = state.gasPrice || 8;
-                    currentBaseFee = Math.max(1, gasPrice * 0.90);
+                    const gasPrice = state.gasPrice || 15;
+                    currentBaseFee = gasPrice * 0.85;
                     dataSource = 'gas-estimate';
                 }
                 
                 state.baseFee = currentBaseFee;
                 console.log(`Base Fee source: ${dataSource}, Value: ${currentBaseFee.toFixed(1)} Gwei`);
                 
-                // Build history - prefer Supabase gas history (most accurate)
+                // Build history - use fees history as proxy if available
                 state.baseFeeHistory = [];
-                
-                if (state.supabaseGasHistory && state.supabaseGasHistory.length > 0) {
-                    // Use Supabase gas history directly - this is real historical data
-                    for (const d of state.supabaseGasHistory) {
-                        state.baseFeeHistory.push({
-                            date: d.date,
-                            value: d.gasPrice * 0.90 // Base fee ≈ 90% of avg gas price
-                        });
-                    }
-                    console.log('   Base Fee: using Supabase gas history');
-                } else if (state.feesHistory && state.feesHistory.length > 0) {
+                if (state.feesHistory && state.feesHistory.length > 0) {
                     const ethPrice = state.price || 3500;
-                    // Calculate base fee from daily fees
-                    // Daily fees = gas used × gas price × ETH price
-                    // Estimate: daily fees / (1.2M tx × 65k gas × ETH price) = gas price in ETH
-                    for (const fee of state.feesHistory) {
-                        const txPerDay = 1200000;
-                        const avgGasPerTx = 65000;
-                        const feesInEth = fee.value / ethPrice;
-                        const estimatedGasPrice = (feesInEth / (txPerDay * avgGasPerTx)) * 1e9;
+                    for (let i = 0; i < state.feesHistory.length; i++) {
+                        const fee = state.feesHistory[i];
+                        // Estimate base fee from daily fees
+                        // Higher fees = higher base fee
+                        const avgDailyFees = state.fees || 5000000;
+                        const feeRatio = fee.value / avgDailyFees;
+                        const estimatedBaseFee = currentBaseFee * feeRatio;
                         state.baseFeeHistory.push({
                             date: fee.date,
-                            value: Math.max(1, Math.min(200, estimatedGasPrice * 0.90))
+                            value: Math.max(5, Math.min(200, estimatedBaseFee))
+                        });
+                    }
+                } else if (state.gasPriceHistory && state.gasPriceHistory.length > 0) {
+                    for (let i = 0; i < state.gasPriceHistory.length; i++) {
+                        const d = state.gasPriceHistory[i];
+                        state.baseFeeHistory.push({
+                            date: d.date,
+                            value: d.value * 0.85
                         });
                     }
                 } else {
-                    // Generate simulated history based on known patterns
-                    // Dec 2021: ~100 Gwei, Dec 2022: ~30 Gwei, Dec 2023: ~30 Gwei, Dec 2024: ~5-10 Gwei
+                    // Generate simulated history if no data available yet
+                    // This will be updated when feesHistory loads
                     const now = Date.now();
-                    for (let i = 1095; i >= 0; i--) {
-                        const progress = 1 - (i / 1095); // 0 → 1
-                        // Exponential decay from ~100 to ~5 Gwei with high volatility early
-                        const baseValue = 100 * Math.exp(-progress * 3) + 5;
-                        const noise = (Math.random() - 0.5) * baseValue * 0.4;
+                    for (let i = 0; i < 52; i++) {
+                        const variation = 1 + 0.3 * Math.sin(i * 0.4);
                         state.baseFeeHistory.push({
-                            date: new Date(now - i * 24 * 60 * 60 * 1000),
-                            value: Math.max(1, baseValue + noise)
+                            date: new Date(now - (52 - i) * 7 * 24 * 60 * 60 * 1000),
+                            value: currentBaseFee * variation
                         });
                     }
                     console.log('   Base Fee: using simulated history');
@@ -18306,81 +18291,63 @@
         }
         
         // Blob Count - EIP-4844 blob usage tracking
+        // Note: fetchBlobFees already calculates blob count via eth_feeHistory API
+        // This function now just ensures UI is updated if called separately
 
         async function fetchBlobCount() {
             try {
-                // === 1차: Supabase blob data 우선 사용 (이미 fetchBlobFees에서 처리됨) ===
-                if (state.blobCountHistory && state.blobCountHistory.length > 0 && state.blobCount > 0) {
-                    console.log('   Blob Count already loaded from Supabase');
+                // If blob data was already fetched by fetchBlobFees, just update UI
+                if (state.blobCount > 0 && state.blobCountHistory && state.blobCountHistory.length > 0) {
+                    const blobCountEl = document.getElementById('blob-count-value');
+                    if (blobCountEl) {
+                        blobCountEl.textContent = fmt.num(state.blobCount);
+                    }
                     updateBlobCountChart();
                     return;
                 }
                 
-                // === 2차: L2 TVL 기반 추정 (실제 데이터 참조) ===
-                // Real data (Nov-Dec 2024): ~21,000 blobs/day average
-                // This correlates roughly with L2 activity
-                const l2Tvl = state.l2Tvl || 45000000000; // ~$45B current L2 TVL
-                
-                // Formula calibrated to match real data:
-                // At $45B L2 TVL → ~21,000 blobs/day
-                // blobs/day ≈ (L2 TVL in billions) × 467
-                const estimatedDailyBlobs = Math.round((l2Tvl / 1e9) * 467);
-                state.blobCount = estimatedDailyBlobs * 7; // Weekly count display
-                
-                console.log(`   Blob Count estimate: ${estimatedDailyBlobs.toLocaleString()}/day, ${state.blobCount.toLocaleString()}/week`);
+                // Fallback: estimate blob count from L2 TVL
+                const l2Tvl = state.l2Tvl || 45000000000;
+                // ~21,000 blobs/day = ~147,000/week at current activity
+                state.blobCount = (l2Tvl / 1e9) * 3300;
                 
                 const blobCountEl = document.getElementById('blob-count-value');
                 if (blobCountEl) {
                     blobCountEl.textContent = fmt.num(state.blobCount);
                 }
                 
-                // Build history - generate realistic growth pattern since Dencun
-                state.blobCountHistory = [];
-                const dencunDate = new Date('2024-03-13');
-                const now = new Date();
-                const daysSinceDencun = Math.floor((now - dencunDate) / (24 * 60 * 60 * 1000));
+                // Build history only if not already built
+                if (!state.blobCountHistory || state.blobCountHistory.length === 0) {
+                    state.blobCountHistory = [];
+                    const dencunDate = new Date('2024-03-13');
+                    const now = new Date();
                 
-                // Real blob growth pattern:
-                // Mar 2024: ~5,000/day (launch)
-                // Jun 2024: ~10,000/day
-                // Sep 2024: ~15,000/day
-                // Nov 2024: ~21,000/day (peak)
-                // Dec 2024: ~21,000/day (stable)
-                
-                if (state.l2History && state.l2History.length > 6) {
-                    // Use L2 history data with better calibration
-                    for (let i = 0; i < state.l2History.length; i++) {
-                        const d = state.l2History[i];
-                        if (d.date.getTime() < dencunDate.getTime()) continue;
-                        
-                        const l2Val = d.value / 1e9; // billions
-                        // Calibrate: at $45B → 21K/day × 7 = 147K/week
-                        const weeklyBlobs = Math.round(l2Val * 467 * 7);
-                        state.blobCountHistory.push({
-                            date: d.date,
-                            value: Math.max(20000, weeklyBlobs) // minimum 20K/week
-                        });
-                    }
-                } else {
-                    // Generate synthetic history based on real growth pattern
-                    for (let i = 0; i <= daysSinceDencun; i += 7) {
-                        const date = new Date(dencunDate.getTime() + i * 24 * 60 * 60 * 1000);
-                        const progress = i / daysSinceDencun; // 0 → 1
-                        
-                        // S-curve growth: slow start, rapid middle, plateau at end
-                        // Start: ~35K/week, Current: ~147K/week
-                        const startBlobs = 35000;
+                    if (state.l2History && state.l2History.length > 6) {
+                        // Use L2 history data
+                        for (let i = 6; i < state.l2History.length; i++) {
+                            const d = state.l2History[i];
+                            if (d.date.getTime() < dencunDate.getTime()) continue;
+                            
+                            const l2Val = d.value / 1e9;
+                            state.blobCountHistory.push({
+                                date: d.date,
+                                value: l2Val * 3300 // calibrated to ~147K weekly
+                            });
+                        }
+                    } else {
+                        // Generate synthetic history from Dencun launch
+                        const weeksFromDencun = Math.floor((now - dencunDate) / (7 * 24 * 60 * 60 * 1000));
                         const currentBlobs = state.blobCount;
-                        const growth = 1 / (1 + Math.exp(-10 * (progress - 0.4))); // sigmoid
-                        const weeklyBlobs = startBlobs + (currentBlobs - startBlobs) * growth;
+                        const startBlobs = currentBlobs * 0.3; // Started at ~30% of current
                         
-                        // Add some realistic variance
-                        const variance = 0.9 + Math.random() * 0.2;
-                        
-                        state.blobCountHistory.push({
-                            date: date,
-                            value: Math.round(weeklyBlobs * variance)
-                        });
+                        for (let i = 0; i <= weeksFromDencun; i++) {
+                            const progress = i / weeksFromDencun;
+                            const blobs = startBlobs + (currentBlobs - startBlobs) * Math.pow(progress, 0.7);
+                            state.blobCountHistory.push({
+                                date: new Date(dencunDate.getTime() + i * 7 * 24 * 60 * 60 * 1000),
+                                value: blobs
+                            });
+                        }
                     }
                 }
                 
@@ -18398,11 +18365,7 @@
             
             const history = state.blobCountHistory || [];
             const cutoffDate = Date.now() - (days * 24 * 60 * 60 * 1000);
-            
-            // Blobs only exist since Dencun (March 13, 2024)
-            const dencunDate = new Date('2024-03-13').getTime();
-            const effectiveCutoff = Math.max(cutoffDate, dencunDate);
-            const filtered = history.filter(d => d.date.getTime() > effectiveCutoff);
+            const filtered = history.filter(d => d.date.getTime() > cutoffDate);
             
             if (filtered.length < 3) {
                 const changeEl = document.getElementById('blob-count-change');
@@ -18416,32 +18379,13 @@
             
             const latest = filtered[filtered.length - 1].value;
             const oldest = filtered[0].value;
-            
-            // Calculate change - handle cases where oldest is 0 or very small
-            let change = 0;
-            let changeLabel = '';
-            
-            // Determine actual period covered by data
-            const actualDays = Math.round((filtered[filtered.length - 1].date - filtered[0].date) / 86400000);
-            
-            if (oldest > 100) {  // Only calculate if oldest is meaningful (at least 100 blobs)
-                change = ((latest - oldest) / oldest) * 100;
-                if (actualDays < 100) changeLabel = `${actualDays}D`;
-                else if (actualDays < 400) changeLabel = `${Math.round(actualDays / 30)}M`;
-                else changeLabel = 'Since Dencun';
-            } else {
-                changeLabel = 'Since Dencun';
-            }
+            const change = oldest > 0 ? ((latest - oldest) / oldest) * 100 : 0;
             
             const changeEl = document.getElementById('blob-count-change');
             if (changeEl) {
-                if (changeLabel === 'Since Dencun' || Math.abs(change) > 500) {
-                    changeEl.textContent = 'Since Mar 2024';
-                    changeEl.className = 'change';
-                } else {
-                    changeEl.textContent = fmt.pct(change) + ' ' + changeLabel;
-                    changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
-                }
+                const periodLabel = days === 90 ? '90D' : days === 365 ? 'YoY' : '3Y';
+                changeEl.textContent = fmt.pct(change) + ' ' + periodLabel;
+                changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
             }
             
             const sampleRate = Math.max(1, Math.floor(filtered.length / 60));
@@ -18499,116 +18443,10 @@
                     console.warn('   Etherscan supply API failed, using fallback');
                 }
                 
-                // 2. Calculate daily issuance from REAL DATA
-                // Etherscan ethsupply2 API returns Eth2Staking (cumulative staking rewards)
-                // Daily Issuance = today's Eth2Staking - yesterday's Eth2Staking
-                
-                let dailyIssuance = 0;
-                let issuanceSource = 'estimated';
-                
-                // Priority 1: Fetch from Etherscan API (real-time)
-                try {
-                    const etherscanKey = localStorage.getItem('etherscan_api_key') || 'YourApiKeyToken';
-                    const supplyRes = await fetch(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply2&apikey=${etherscanKey}`);
-                    const supplyData = await supplyRes.json();
-                    
-                    if (supplyData?.status === '1' && supplyData?.result?.Eth2Staking) {
-                        const currentEth2Staking = parseFloat(supplyData.result.Eth2Staking) / 1e18; // Wei to ETH
-                        
-                        // Get previous value from localStorage (stored from last fetch)
-                        const prevData = JSON.parse(localStorage.getItem('eth2_staking_data') || '{}');
-                        const prevEth2Staking = prevData.value || 0;
-                        const prevTimestamp = prevData.timestamp || 0;
-                        const hoursSinceLastFetch = (Date.now() - prevTimestamp) / (1000 * 60 * 60);
-                        
-                        // Calculate daily issuance if we have previous data
-                        if (prevEth2Staking > 0 && hoursSinceLastFetch > 0 && hoursSinceLastFetch < 48) {
-                            // Scale to daily rate based on time elapsed
-                            const issuanceInPeriod = currentEth2Staking - prevEth2Staking;
-                            dailyIssuance = (issuanceInPeriod / hoursSinceLastFetch) * 24;
-                            
-                            // Sanity check: should be 1,000-3,000 ETH/day
-                            if (dailyIssuance > 500 && dailyIssuance < 4000) {
-                                issuanceSource = 'etherscan-api';
-                                console.log(`   ✅ Daily Issuance from Etherscan: ${dailyIssuance.toFixed(0)} ETH`);
-                                console.log(`      Eth2Staking: ${currentEth2Staking.toFixed(0)} ETH (prev: ${prevEth2Staking.toFixed(0)})`);
-                                console.log(`      Time elapsed: ${hoursSinceLastFetch.toFixed(1)} hours`);
-                            } else {
-                                dailyIssuance = 0; // Invalid, use fallback
-                            }
-                        }
-                        
-                        // Store current value for next calculation
-                        localStorage.setItem('eth2_staking_data', JSON.stringify({
-                            value: currentEth2Staking,
-                            timestamp: Date.now()
-                        }));
-                    }
-                } catch (e) {
-                    console.log('   Etherscan ethsupply2 API error:', e.message);
-                }
-                
-                // Priority 2: Use Supabase historical data if available
-                if (dailyIssuance === 0 && state.supabaseIssuanceHistory && state.supabaseIssuanceHistory.length > 1) {
-                    // Get most recent daily issuance from Supabase
-                    const sorted = [...state.supabaseIssuanceHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-                    if (sorted.length >= 2) {
-                        const latest = sorted[0];
-                        if (latest.daily_issuance > 0) {
-                            dailyIssuance = latest.daily_issuance;
-                            issuanceSource = 'supabase';
-                            console.log(`   ✅ Daily Issuance from Supabase: ${dailyIssuance.toFixed(0)} ETH`);
-                        }
-                    }
-                }
-                
-                // Priority 3: Calculate from ETH supply changes if we have that data
-                if (dailyIssuance === 0 && state.supabaseEthSupplyHistory && state.supabaseEthSupplyHistory.length > 7) {
-                    const sorted = [...state.supabaseEthSupplyHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-                    if (sorted.length >= 2) {
-                        // Get 7-day average supply change (accounts for burns too, so add back burns)
-                        let totalChange = 0;
-                        let validDays = 0;
-                        for (let i = 0; i < Math.min(7, sorted.length - 1); i++) {
-                            const diff = (sorted[i].eth_supply || 0) - (sorted[i + 1].eth_supply || 0);
-                            if (Math.abs(diff) < 10000) { // Sanity check
-                                totalChange += diff;
-                                validDays++;
-                            }
-                        }
-                        if (validDays > 0) {
-                            const avgNetChange = totalChange / validDays; // This is NET (issuance - burn)
-                            const avgBurn = state.dailyBurn || 1500;
-                            dailyIssuance = avgNetChange + avgBurn; // Gross issuance
-                            if (dailyIssuance > 500 && dailyIssuance < 4000) {
-                                issuanceSource = 'supply-delta';
-                                console.log(`   ✅ Daily Issuance from supply delta: ${dailyIssuance.toFixed(0)} ETH`);
-                            } else {
-                                dailyIssuance = 0;
-                            }
-                        }
-                    }
-                }
-                
-                // Fallback: Calculate from staking data
-                if (dailyIssuance === 0) {
-                    const stakedEth = state.stakedEth || 34000000;
-                    const stakingApr = state.stakingApr || 3.0;
-                    const totalValidators = state.totalValidators || Math.floor(stakedEth / 32);
-                    
-                    // Consensus layer is ~65% of total staking APR
-                    const consensusLayerApr = stakingApr * 0.65;
-                    const issuanceFromApr = (stakedEth * (consensusLayerApr / 100)) / 365;
-                    const issuanceFromValidators = totalValidators * 0.00175;
-                    
-                    dailyIssuance = (issuanceFromApr + issuanceFromValidators) / 2;
-                    issuanceSource = 'estimated';
-                    console.log(`   ⚠️ Daily Issuance estimated: ${dailyIssuance.toFixed(0)} ETH`);
-                }
-                
-                state.dailyIssuance = Math.max(1000, Math.min(3000, dailyIssuance));
-                state.dailyIssuanceSource = issuanceSource;
-                console.log(`   Daily Issuance: ${state.dailyIssuance.toFixed(0)} ETH (source: ${issuanceSource})`)
+                // 2. Estimate daily issuance from staking APR
+                const stakedEth = state.stakedEth || 34000000;
+                const stakingApr = state.stakingApr || 3.5;
+                state.dailyIssuance = (stakedEth * (stakingApr / 100)) / 365;
                 
                 // 3. Daily burn - Supabase 실제 데이터 우선 사용
                 // Supabase gas 데이터에 eth_burnt 필드가 있음
@@ -18667,8 +18505,7 @@
                 console.error('Supply Dynamics error:', e);
                 state.gasUtilization = 75;
                 state.dailyBurn = 2000;
-                state.dailyIssuance = state.dailyIssuance || 1700; // Use existing value or fallback
-                state.dailyIssuanceSource = state.dailyIssuanceSource || 'fallback';
+                state.dailyIssuance = 2400;
                 state.netSupplyChange = 0.35;
                 updateSupplyDynamicsUI();
             }
@@ -18681,58 +18518,24 @@
             state.netSupplyHistory = [];
             
             const totalSupply = state.ethSupply || 120000000;
-            const currentStakedEth = state.stakedEth || 34000000;
-            const currentApr = state.stakingApr || 3.0;
+            const stakedEth = state.stakedEth || 34000000;
+            const stakingApr = state.stakingApr || 3.5;
+            const dailyIssuance = (stakedEth * (stakingApr / 100)) / 365;
             
             // 현재 값들 (이미 계산됨)
             const currentBurn = state.dailyBurn || 1500;
             const currentUtil = state.gasUtilization || 60;
+            const currentNetChange = state.netSupplyChange || 0.5;
             
             console.log('   Building Supply Dynamics history...');
-            console.log('   Current values - Burn:', currentBurn.toFixed(0), 'Util:', currentUtil.toFixed(1));
+            console.log('   Current values - Burn:', currentBurn.toFixed(0), 'Util:', currentUtil.toFixed(1), 'Net:', currentNetChange.toFixed(2));
             
-            // Supabase staking history 사용 (있으면)
-            const stakingHistory = state.supabaseStakingHistory || [];
-            const stakingMap = new Map();
-            stakingHistory.forEach(d => {
-                const dateStr = d.date.toISOString().split('T')[0];
-                stakingMap.set(dateStr, { staked: d.value, apr: d.apr || currentApr });
-            });
-            
-            // Historical staked ETH growth pattern (if no real data)
-            // Dec 2021: ~8M ETH, Dec 2022: ~16M ETH, Dec 2023: ~28M ETH, Dec 2024: ~34M ETH
-            const baseStaked2021 = 8000000;
-            const growthRate = Math.pow(currentStakedEth / baseStaked2021, 1/1095); // daily growth
-            
-            // Historical APR decline pattern
-            // 2021: ~5%, 2022: ~4.5%, 2023: ~4%, 2024: ~3%
-            const baseApr2021 = 5.0;
-            const aprDecline = (baseApr2021 - currentApr) / 1095;
-            
+            // 항상 시뮬레이션 생성 (현재 값 기준으로 과거 추정)
+            // 1년 전에는 burn이 더 높았음 (gas fees가 높았음)
             for (let i = 1095; i >= 0; i--) {
                 const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-                const dateStr = date.toISOString().split('T')[0];
                 const progress = 1 - (i / 1095); // 0 → 1 (과거 → 현재)
-                const noise = (Math.random() - 0.5) * 0.15; // ±7.5% noise
-                
-                // Get staked ETH for this date (from real data or estimate)
-                let stakedEthOnDate, aprOnDate;
-                if (stakingMap.has(dateStr)) {
-                    const data = stakingMap.get(dateStr);
-                    stakedEthOnDate = data.staked;
-                    aprOnDate = data.apr;
-                } else {
-                    // Estimate based on growth pattern
-                    stakedEthOnDate = baseStaked2021 * Math.pow(growthRate, 1095 - i);
-                    aprOnDate = baseApr2021 - aprDecline * (1095 - i);
-                }
-                
-                // Calculate daily issuance for this date (CONSENSUS LAYER ONLY)
-                // Consensus layer is ~65% of total APR (rest is fees/MEV redistribution)
-                const consensusApr = aprOnDate * 0.65;
-                const dailyIssuance = Math.max(800, Math.min(2500, 
-                    (stakedEthOnDate * (consensusApr / 100)) / 365 * (1 + noise * 0.1)
-                ));
+                const noise = (Math.random() - 0.5) * 0.3; // ±15% noise
                 
                 // Daily Burn: 과거에는 더 높았음 (2x~3x), 현재로 감소
                 const historicalBurnMultiplier = 2.5 - progress * 1.5; // 2.5x → 1x
@@ -18742,19 +18545,18 @@
                 const historicalUtilMultiplier = 1.2 - progress * 0.2; // 1.2x → 1x
                 const utilization = Math.min(95, Math.max(50, currentUtil * historicalUtilMultiplier * (1 + noise * 0.3)));
                 
-                // Net Supply Change
+                // Net Supply Change: burn이 높았을 때는 deflationary였을 수 있음
                 const dailyNetChange = dailyIssuance - dailyBurn;
                 const annualChange = (dailyNetChange * 365 / totalSupply) * 100;
                 
                 state.gasUtilizationHistory.push({ date, value: utilization });
                 state.burnHistory.push({ date, value: Math.max(100, dailyBurn) });
-                state.issuanceHistory.push({ date, value: Math.max(500, dailyIssuance) });
+                state.issuanceHistory.push({ date, value: dailyIssuance });
                 state.netSupplyHistory.push({ date, value: annualChange });
             }
             
             console.log('   History generated:', state.burnHistory.length, 'points');
             console.log('   Burn range:', state.burnHistory[0].value.toFixed(0), '→', state.burnHistory[state.burnHistory.length-1].value.toFixed(0));
-            console.log('   Issuance range:', state.issuanceHistory[0].value.toFixed(0), '→', state.issuanceHistory[state.issuanceHistory.length-1].value.toFixed(0));
         }
         
 
@@ -18999,25 +18801,6 @@
                 issuanceEl.textContent = fmt.num(state.dailyIssuance) + ' ETH';
             }
             
-            // Issuance source badge
-            const issuanceBadge = document.getElementById('issuance-source-badge');
-            if (issuanceBadge) {
-                const source = state.dailyIssuanceSource || 'estimated';
-                if (source === 'etherscan-api' || source === 'supabase') {
-                    issuanceBadge.textContent = 'API';
-                    issuanceBadge.style.background = 'rgba(0, 200, 100, 0.2)';
-                    issuanceBadge.style.color = '#00c864';
-                } else if (source === 'supply-delta') {
-                    issuanceBadge.textContent = 'Calc';
-                    issuanceBadge.style.background = 'rgba(100, 200, 255, 0.2)';
-                    issuanceBadge.style.color = '#64c8ff';
-                } else {
-                    issuanceBadge.textContent = 'Est.';
-                    issuanceBadge.style.background = 'rgba(255, 200, 100, 0.2)';
-                    issuanceBadge.style.color = '#ffc864';
-                }
-            }
-            
             // Net Supply Change
             const netChangeEl = document.getElementById('net-supply-change');
             if (netChangeEl) {
@@ -19158,15 +18941,9 @@
             }
         }
 
-        function updateMetricChart(canvasId, chartInstance, history, color, key, forceUpdate = false) {
+        function updateMetricChart(canvasId, chartInstance, history, color, key) {
             const ctx = document.getElementById(canvasId);
             if (!ctx) return;
-            
-            // 이미 렌더링된 차트는 스킵 (forceUpdate가 아닌 경우)
-            if (chartRendered[key] && !forceUpdate) {
-                console.log(`   ${canvasId}: already rendered, skipping`);
-                return;
-            }
             
             // 데이터 없으면 fallback 생성
             if (!history || history.length < 2) {
@@ -19180,9 +18957,6 @@
                     });
                 }
             }
-            
-            // 렌더링 플래그 설정
-            chartRendered[key] = true;
             
             if (key === 'tvl' && tvlChart) tvlChart.destroy();
             if (key === 'staking' && stakingChart) stakingChart.destroy();
@@ -20276,7 +20050,7 @@
                 const setEl = (id, text) => { try { const el = document.getElementById(id); if (el) el.textContent = text; } catch(e){} };
                 const safeCall = (fn, name) => { try { fn(); } catch(e) { console.error(name + ' error:', e); } };
                 
-                // 시뮬레이션 (fallback용)
+                // 90일 시뮬레이션 (fallback용)
                 const simpleHistory = (val, days = 365) => {
                     const h = [];
                     for (let i = days; i >= 0; i--) {
@@ -20297,31 +20071,21 @@
                     state.price = state.priceHistory[state.priceHistory.length - 1].value;
                     priceSource = 'supabase';
                     console.log(`   Price: Using Supabase (${state.supabasePriceHistory.length} points)`);
-                    // 캐시에서 가격 표시
-                    setEl('current-price', '$' + state.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                    setEl('summary-current-price', '$' + state.price.toLocaleString(undefined, {maximumFractionDigits: 0}));
                 } else if (state.supabasePriceHistory?.length > 0) {
                     // Supabase 데이터가 있지만 부족 - Binance에서 보충 필요
                     console.log(`   Price: Supabase insufficient (${state.supabasePriceHistory.length} points), will fetch from Binance`);
+                    // fetchBinanceHistory가 나중에 호출되어 보충함
                     state.priceHistory = state.supabasePriceHistory;
                     state.price = state.priceHistory[state.priceHistory.length - 1].value;
                     priceSource = 'api'; // Binance로 보충 예정
-                    // 캐시에서 임시 가격 표시 (곧 실시간으로 업데이트됨)
-                    setEl('current-price', '$' + state.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                    setEl('summary-current-price', '$' + state.price.toLocaleString(undefined, {maximumFractionDigits: 0}));
                 } else if (!state.priceHistory?.length) {
-                    // 캐시 없음 - 로딩 표시 (API 응답 대기)
-                    state.price = 0;
-                    state.priceHistory = [];
-                    setEl('current-price', '...');
-                    setEl('summary-current-price', '...');
+                    state.price = 3800;
+                    state.priceHistory = simpleHistory(3800);
                 }
                 state.marketCap = state.price * 120000000;
-                if (state.price > 0) {
-                    setEl('market-cap', '$' + (state.marketCap / 1e9).toFixed(0) + 'B');
-                } else {
-                    setEl('market-cap', '...');
-                }
+                setEl('current-price', '$' + state.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                setEl('summary-current-price', '$' + state.price.toLocaleString(undefined, {maximumFractionDigits: 0}));
+                setEl('market-cap', '$' + (state.marketCap / 1e9).toFixed(0) + 'B');
                 safeCall(() => updateCombinedPriceVolumeChart(1095), 'price'); // 기본 3Y로 변경
                 setDataSource('price-chart', priceSource, 'Binance');
                 
@@ -20353,47 +20117,25 @@
                     state.stakedEth = 34000000;
                     state.stakingHistory = simpleHistory(34e6);
                 }
-                setEl('staked-value', (state.stakedEth / 1e6).toFixed(2) + 'M ETH');
+                setEl('staked-eth', (state.stakedEth / 1e6).toFixed(2) + 'M ETH');
                 safeCall(() => updateMetricChart('staking-chart', stakingChart, state.stakingHistory, '#6366f1', 'staking'), 'staking');
                 setDataSource('staking-chart', stakingSource, 'Beaconcha.in');
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 4. L2 TVL - 데이터 검증 후 사용
+                // 4. L2 TVL
                 // ═══════════════════════════════════════════════════════════════════
                 let l2Source = 'fallback';
-                
-                // L2 TVL: 10개 이상의 날짜 데이터, 최신값 $1B 이상이면 유효 (현재 ~$45-50B)
-                const hasL2Data = state.supabaseL2History?.length > 0;
-                const l2DataPoints = state.supabaseL2History?.length || 0;
-                const latestL2Value = state.supabaseL2History?.[state.supabaseL2History.length - 1]?.value || 0;
-                
-                console.log(`   L2 TVL check: hasData=${hasL2Data}, points=${l2DataPoints}, latest=$${(latestL2Value/1e9).toFixed(2)}B`);
-                
-                // 조건 완화: 10개 이상의 데이터 포인트, $1B 이상
-                const validL2Data = l2DataPoints > 10 && latestL2Value > 1e9;
-                
-                if (validL2Data) {
+                if (state.supabaseL2History?.length > 0) {
                     state.l2History = state.supabaseL2History;
                     state.l2Tvl = state.l2History[state.l2History.length - 1].value;
                     l2Source = 'supabase';
-                    console.log(`   ✅ L2 TVL: Using Supabase (${state.l2History.length} points), $${(state.l2Tvl/1e9).toFixed(1)}B`);
-                } else {
-                    // Fallback: 현실적인 L2 TVL 데이터
-                    console.log(`   ⚠️ L2 TVL: Using fallback (validation failed: points=${l2DataPoints}, value=$${(latestL2Value/1e9).toFixed(2)}B)`);
-                    state.l2Tvl = 45000000000;
-                    state.l2History = [];
-                    for (let i = 1095; i >= 0; i--) {
-                        const date = new Date(Date.now() - i * 86400000);
-                        // 2022: ~$5B → 2024: ~$45B 성장 트렌드
-                        const progress = 1 - (i / 1095);
-                        const base = 5e9 + (40e9 * Math.pow(progress, 1.3));
-                        const variation = base * (0.95 + Math.random() * 0.1);
-                        state.l2History.push({ date, value: variation });
-                    }
+                } else if (!state.l2History?.length) {
+                    state.l2Tvl = 12000000000;
+                    state.l2History = simpleHistory(12e9);
                 }
-                setEl('l2-value', '$' + (state.l2Tvl / 1e9).toFixed(2) + 'B');
+                setEl('l2-tvl', '$' + (state.l2Tvl / 1e9).toFixed(2) + 'B');
                 safeCall(() => updateMetricChart('l2-chart', l2Chart, state.l2History, '#a855f7', 'l2'), 'l2');
-                setDataSource('l2-chart', l2Source, 'DefiLlama');
+                setDataSource('l2-chart', l2Source, 'L2Beat');
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 5. Fees (주간)
@@ -20488,21 +20230,21 @@
                 }
                 setEl('exchange-reserve', (state.exchangeReserve / 1e6).toFixed(2) + 'M ETH');
                 safeCall(() => updateMetricChart('reserve-chart', reserveChart, state.reserveHistory, '#f59e0b', 'reserve'), 'reserve');
-                setDataSource('reserve-chart', reserveSource, 'CryptoQuant', state.reserveDataSource || '');
+                setDataSource('reserve-chart', reserveSource, 'CryptoQuant');
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 10. Fear & Greed
                 // ═══════════════════════════════════════════════════════════════════
                 let fearGreedSource = 'fallback';
                 if (state.supabaseFearGreedHistory?.length > 0) {
-                    state.fgHistory = state.supabaseFearGreedHistory;
-                    state.fearGreedIndex = state.fgHistory[state.fgHistory.length - 1].value;
+                    state.fearGreedHistory = state.supabaseFearGreedHistory;
+                    state.fearGreedIndex = state.fearGreedHistory[state.fearGreedHistory.length - 1].value;
                     fearGreedSource = 'supabase';
-                } else if (!state.fgHistory?.length) {
+                } else if (!state.fearGreedHistory?.length) {
                     state.fearGreedIndex = 65;
-                    state.fgHistory = [];
+                    state.fearGreedHistory = [];
                     for (let i = 365; i >= 0; i--) {
-                        state.fgHistory.push({ date: new Date(Date.now() - i * 86400000), value: 30 + Math.random() * 50 });
+                        state.fearGreedHistory.push({ date: new Date(Date.now() - i * 86400000), value: 30 + Math.random() * 50 });
                     }
                 }
                 setEl('fear-greed', Math.round(state.fearGreedIndex));
@@ -20524,7 +20266,7 @@
                         state.volatilityHistory.push({ date: new Date(Date.now() - i * 86400000), value: 30 + Math.random() * 40 });
                     }
                 }
-                setEl('volatility', state.volatility.toFixed(1) + '%');
+                setEl('volatility-value', state.volatility.toFixed(1) + '%');
                 safeCall(() => updateVolatilityChart(), 'volatility');
                 setDataSource('volatility-chart', volatilitySource, 'Calculated');
                 
@@ -20581,86 +20323,48 @@
                 setDataSource('ethbtc-chart', ethbtcSource, 'Binance');
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 14. NVT Ratio - 데이터 검증 후 사용
+                // 14. NVT Ratio
                 // ═══════════════════════════════════════════════════════════════════
                 let nvtSource = 'fallback';
-                
-                // NVT가 20-200 범위인 데이터만 유효
-                const validNvtData = state.supabaseNvtHistory?.filter(d => d.value >= 20 && d.value <= 200) || [];
-                
-                if (validNvtData.length > 100) {
-                    state.nvtHistory = validNvtData;
-                    state.nvtRatio = state.nvtHistory[state.nvtHistory.length - 1].value;
+                if (state.supabaseNvtHistory?.length > 0) {
+                    state.nvtHistory = state.supabaseNvtHistory;
+                    // NVT값은 합리적인 범위로 제한 (20-200)
+                    const rawNvt = state.nvtHistory[state.nvtHistory.length - 1].value;
+                    state.nvtRatio = Math.max(20, Math.min(200, rawNvt));
                     nvtSource = 'supabase';
-                    console.log(`   NVT: Using Supabase (${validNvtData.length} valid points), latest: ${state.nvtRatio.toFixed(1)}`);
-                } else {
-                    // Fallback: 현실적인 NVT 데이터
-                    console.log('   NVT: Using fallback (Supabase data invalid)');
-                    state.nvtRatio = 60;
-                    state.nvtHistory = [];
-                    for (let i = 1095; i >= 0; i--) {
-                        const date = new Date(Date.now() - i * 86400000);
-                        // Bull market: 낮은 NVT (30-50), Bear market: 높은 NVT (80-120)
-                        const cycle = Math.sin(i * 0.003) * 25; // 장기 사이클
-                        const noise = (Math.random() - 0.5) * 15;
-                        state.nvtHistory.push({ date, value: Math.max(25, Math.min(150, 60 + cycle + noise)) });
-                    }
+                } else if (!state.nvtHistory?.length) {
+                    state.nvtRatio = 100;
+                    state.nvtHistory = simpleHistory(100);
                 }
                 setEl('nvt-value', state.nvtRatio.toFixed(1));
                 safeCall(() => updateMetricChart('nvt-chart', nvtChart, state.nvtHistory, '#be123c', 'nvt'), 'nvt');
                 setDataSource('nvt-chart', nvtSource, 'Calculated');
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 15. Supply Dynamics - 데이터 검증 후 사용
+                // 15. Supply Dynamics - Supabase Gas 데이터 사용
                 // ═══════════════════════════════════════════════════════════════════
                 let supplySource = 'fallback';
                 
-                // 데이터가 50개 이상 있으면 유효 (검증 조건 대폭 완화)
-                const gasDataLength = state.supabaseGasHistory?.length || 0;
-                const hasValidGasData = gasDataLength > 50;
-                
-                if (hasValidGasData) {
+                if (state.supabaseGasHistory?.length > 0) {
                     supplySource = 'supabase';
+                    // Gas 데이터에서 Supply Dynamics 추출
                     const latestGas = state.supabaseGasHistory[state.supabaseGasHistory.length - 1];
-                    state.dailyBurn = latestGas.burnt > 0 ? latestGas.burnt : 150;
-                    state.baseFee = latestGas.gasPrice > 0 ? latestGas.gasPrice : 12;
+                    state.dailyBurn = latestGas.burnt || 1500;
+                    state.baseFee = latestGas.gasPrice || 12;
                     
-                    // 히스토리 생성 (0값은 인접값으로 보정)
-                    let lastBurn = 150, lastGas = 12;
-                    state.burnHistory = state.supabaseGasHistory.map(d => {
-                        const val = d.burnt > 0 ? d.burnt : lastBurn;
-                        if (d.burnt > 0) lastBurn = d.burnt;
-                        return { date: d.date, value: val };
-                    });
-                    state.baseFeeHistory = state.supabaseGasHistory.map(d => {
-                        const val = d.gasPrice > 0 ? d.gasPrice : lastGas;
-                        if (d.gasPrice > 0) lastGas = d.gasPrice;
-                        return { date: d.date, value: val };
-                    });
+                    // 히스토리 생성
+                    state.burnHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.burnt || 0 }));
+                    state.baseFeeHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.gasPrice || 0 }));
+                    state.txEthHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.txCount || 0 }));
                     
-                    console.log(`   Supply Dynamics: Using Supabase (${gasDataLength} points)`);
+                    console.log(`   Supply Dynamics: Using Supabase Gas data (${state.supabaseGasHistory.length} points)`);
                 } else {
-                    // Fallback: 현실적인 Supply Dynamics 데이터
-                    console.log(`   Supply Dynamics: Using fallback (only ${gasDataLength} gas records)`);
-                    supplySource = 'supabase'; // fallback이어도 supabase로 표시 (Cached로 보이게)
-                    state.dailyBurn = 150;
-                    state.baseFee = 12;
-                    state.burnHistory = [];
-                    state.baseFeeHistory = [];
-                    for (let i = 1095; i >= 0; i--) {
-                        const date = new Date(Date.now() - i * 86400000);
-                        // 2022: 높은 burn/gas → 2024: 낮은 burn/gas
-                        const progress = 1 - (i / 1095);
-                        const burnBase = 3000 - (2800 * progress); // 3000 → 200
-                        const gasBase = 50 - (40 * progress); // 50 → 10
-                        const variation = 0.7 + Math.random() * 0.6;
-                        state.burnHistory.push({ date, value: Math.max(50, burnBase * variation) });
-                        state.baseFeeHistory.push({ date, value: Math.max(5, gasBase * variation) });
-                    }
+                    state.dailyBurn = state.dailyBurn || 1500;
+                    state.baseFee = state.baseFee || 12;
                 }
                 
                 state.gasUtilization = state.gasUtilization || 60;
-                state.dailyIssuance = state.dailyIssuance || 1800; // Reasonable default if no data
+                state.dailyIssuance = state.dailyIssuance || 2800;
                 state.netSupplyChange = ((state.dailyIssuance - state.dailyBurn) * 365 / 120000000) * 100;
                 
                 setEl('gas-utilization-value', state.gasUtilization.toFixed(1) + '%');
@@ -20670,17 +20374,17 @@
                 
                 if (!state.gasUtilizationHistory?.length) state.gasUtilizationHistory = simpleHistory(60);
                 if (!state.burnHistory?.length) state.burnHistory = simpleHistory(1500);
-                if (!state.issuanceHistory?.length) state.issuanceHistory = simpleHistory(state.dailyIssuance || 1800);
+                if (!state.issuanceHistory?.length) state.issuanceHistory = simpleHistory(2800);
                 if (!state.netSupplyHistory?.length) state.netSupplyHistory = simpleHistory(0.4);
                 
-                safeCall(() => updateGasUtilizationChart(1095), 'gasUtil');
-                safeCall(() => updateDailyBurnChart(1095), 'burn');
-                safeCall(() => updateDailyIssuanceChart(1095), 'issuance');
-                safeCall(() => updateNetSupplyChart(1095), 'netSupply');
-                setDataSource('gas-utilization-chart', supplySource, '', state.gasDataSource || '');
-                setDataSource('daily-burn-chart', supplySource, '', state.gasDataSource || '');
-                setDataSource('daily-issuance-chart', supplySource, '', state.gasDataSource || '');
-                setDataSource('net-supply-chart', supplySource, '', state.gasDataSource || '');
+                safeCall(() => updateGasUtilizationChart(365), 'gasUtil');
+                safeCall(() => updateDailyBurnChart(365), 'burn');
+                safeCall(() => updateDailyIssuanceChart(365), 'issuance');
+                safeCall(() => updateNetSupplyChart(365), 'netSupply');
+                setDataSource('gas-utilization-chart', supplySource);
+                setDataSource('daily-burn-chart', supplySource);
+                setDataSource('daily-issuance-chart', supplySource);
+                setDataSource('net-supply-chart', supplySource);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 16. Base Fee
@@ -20688,7 +20392,7 @@
                 setEl('base-fee', state.baseFee.toFixed(1) + ' Gwei');
                 if (!state.baseFeeHistory?.length) state.baseFeeHistory = simpleHistory(12);
                 safeCall(() => updateBaseFeeChart(), 'baseFee');
-                setDataSource('base-fee-chart', supplySource, '', state.gasDataSource || '');
+                setDataSource('base-fee-chart', supplySource);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 17. Blob Fees & Count
@@ -20719,62 +20423,29 @@
                 setEl('blob-count-value', (state.blobCount / 1000).toFixed(1) + 'K');
                 safeCall(() => updateBlobFeesChart(), 'blobFees');
                 safeCall(() => updateBlobCountChart(), 'blobCount');
-                setDataSource('blob-fees-chart', blobSource, '', state.blobDataSource || '');
-                setDataSource('blob-count-chart', blobSource, '', state.blobDataSource || '');
+                setDataSource('blob-fees-chart', blobSource);
+                setDataSource('blob-count-chart', blobSource);
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 18. Transactions - 데이터 검증 후 사용
+                // 18. Transactions - Supabase Gas 데이터 사용
                 // ═══════════════════════════════════════════════════════════════════
                 let txSource = 'fallback';
-                
-                // supabaseTransactionsHistory 또는 supabaseGasHistory.txCount 사용
-                // ETH 메인넷 tx: ~1.1-1.3M/day
-                let validTxHistory = null;
-                
-                if (state.supabaseTransactionsHistory?.length > 100) {
-                    const lastTx = state.supabaseTransactionsHistory[state.supabaseTransactionsHistory.length - 1]?.value;
-                    if (lastTx >= 500000 && lastTx <= 3000000) {
-                        validTxHistory = state.supabaseTransactionsHistory;
-                        txSource = 'supabase';
-                    }
-                }
-                
-                if (!validTxHistory && state.supabaseGasHistory?.length > 0) {
-                    const validGasData = state.supabaseGasHistory.filter(d => d.txCount >= 500000 && d.txCount <= 3000000);
-                    if (validGasData.length > 100) {
-                        validTxHistory = validGasData.map(d => ({ date: d.date, value: d.txCount }));
-                        txSource = 'supabase';
-                    }
-                }
-                
-                if (validTxHistory) {
-                    state.txEth = validTxHistory[validTxHistory.length - 1].value;
-                    state.txEthHistory = validTxHistory;
-                    state.txTotalHistory = validTxHistory.map(d => ({ date: d.date, value: d.value * 4 }));
-                    console.log(`   Transactions: Using Supabase (${validTxHistory.length} points), latest: ${(state.txEth/1e6).toFixed(2)}M`);
+                if (state.supabaseGasHistory?.length > 0) {
+                    txSource = 'supabase';
+                    const latestTx = state.supabaseGasHistory[state.supabaseGasHistory.length - 1];
+                    state.txEth = latestTx.txCount || 1200000;
+                    state.txEthHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.txCount || 0 }));
+                    state.txTotalHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: (d.txCount || 0) * 4 })); // L2 포함 추정
                 } else {
-                    // Fallback: 현실적인 트랜잭션 데이터
-                    console.log('   Transactions: Using fallback (no valid Supabase data)');
-                    state.txEth = 1150000;
-                    state.txEthHistory = [];
-                    state.txTotalHistory = [];
-                    for (let i = 1095; i >= 0; i--) {
-                        const date = new Date(Date.now() - i * 86400000);
-                        // 트렌드: 1.25M → 1.1M (L2 이동)
-                        const progress = 1 - (i / 1095);
-                        const trend = 1250000 - (150000 * progress);
-                        const variation = trend * (0.95 + Math.random() * 0.1);
-                        const ethTx = Math.floor(variation);
-                        state.txEthHistory.push({ date, value: ethTx });
-                        state.txTotalHistory.push({ date, value: ethTx * 4 });
-                    }
+                    state.txEth = state.txEth || 1200000;
+                    if (!state.txEthHistory?.length) state.txEthHistory = simpleHistory(1.2e6);
+                    if (!state.txTotalHistory?.length) state.txTotalHistory = simpleHistory(5e6);
                 }
-                setEl('tx-eth-value', (state.txEth / 1e6).toFixed(2) + 'M');
-                setEl('tx-total-value', ((state.txEth * 4) / 1e6).toFixed(1) + 'M');
+                setEl('tx-eth', (state.txEth / 1e6).toFixed(2) + 'M');
                 safeCall(() => updateMetricChart('tx-eth-chart', txEthChart, state.txEthHistory, '#14b8a6', 'txEth'), 'txEth');
                 safeCall(() => updateMetricChart('tx-total-chart', txTotalChart, state.txTotalHistory, '#8b5cf6', 'txTotal'), 'txTotal');
-                setDataSource('tx-eth-chart', txSource, 'Etherscan', state.txDataSource || '');
-                setDataSource('tx-total-chart', txSource, 'Etherscan', state.txDataSource || '');
+                setDataSource('tx-eth-chart', txSource);
+                setDataSource('tx-total-chart', txSource);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 19. Stablecoin Total Market (All Chains)
@@ -20801,33 +20472,22 @@
                 setDataSource('stablecoin-chart', stablecoinSource, 'DefiLlama');
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 20. Staking Yield - Supabase Staking APR 데이터 사용
+                // 20. Staking Yield - Supabase Staking 데이터 사용
                 // ═══════════════════════════════════════════════════════════════════
                 let stakingYieldSource = 'fallback';
-                
-                // 우선순위: supabaseStakingAprHistory > supabaseStakingHistory.apr
-                if (state.supabaseStakingAprHistory?.length > 10) {
-                    stakingYieldSource = 'supabase';
-                    state.stakingAprHistory = state.supabaseStakingAprHistory;
-                    state.stakingApr = state.stakingAprHistory[state.stakingAprHistory.length - 1]?.value || 3.2;
-                    console.log(`   Staking Yield: Using Supabase APR (${state.stakingAprHistory.length} points), APR: ${state.stakingApr.toFixed(2)}%`);
-                } else if (state.supabaseStakingHistory?.length > 0 && state.supabaseStakingHistory.some(d => d.apr > 0)) {
+                if (state.supabaseStakingHistory?.length > 0) {
                     stakingYieldSource = 'supabase';
                     const latestStaking = state.supabaseStakingHistory[state.supabaseStakingHistory.length - 1];
                     state.stakingApr = latestStaking.apr || 3.2;
-                    state.stakingAprHistory = state.supabaseStakingHistory.map(d => ({ date: d.date, value: d.apr || 3.2 }));
-                    console.log(`   Staking Yield: Using Supabase Staking (${state.supabaseStakingHistory.length} points), APR: ${state.stakingApr.toFixed(2)}%`);
+                    state.stakingAprHistory = state.supabaseStakingHistory.map(d => ({ date: d.date, value: d.apr || 0 }));
+                    console.log(`   Staking Yield: Using Supabase (${state.supabaseStakingHistory.length} points), APR: ${state.stakingApr.toFixed(2)}%`);
                 } else {
-                    // Fallback: 현실적인 APR 히스토리 생성 (3-5% 범위)
-                    state.stakingApr = 3.2;
-                    state.stakingAprHistory = [];
-                    for (let i = 1095; i >= 0; i--) {
-                        const date = new Date(Date.now() - i * 86400000);
-                        // 시간에 따른 APR 변화 (초기 5-6%, 점점 3-4%로)
-                        const progress = i / 1095;
-                        const baseApr = 3.0 + progress * 2.5; // 5.5% -> 3.0%
-                        const variation = (Math.sin(i * 0.02) * 0.3);
-                        state.stakingAprHistory.push({ date, value: Math.max(2.5, baseApr + variation) });
+                    state.stakingApr = state.stakingApr || 3.2;
+                    if (!state.stakingAprHistory?.length) {
+                        state.stakingAprHistory = [];
+                        for (let i = 365; i >= 0; i--) {
+                            state.stakingAprHistory.push({ date: new Date(Date.now() - i * 86400000), value: 3 + Math.random() * 1.5 });
+                        }
                     }
                 }
                 setEl('staking-yield-value', state.stakingApr.toFixed(2) + '%');
@@ -20939,9 +20599,6 @@
             }
         }
         
-        // Chart rendering flags - prevent double rendering
-        const chartRendered = {};
-        
         async function loadDataInBackground() {
             console.log('   Loading real data in background...');
             
@@ -20950,146 +20607,50 @@
                 const supabaseTimeout = new Promise(r => setTimeout(() => r('timeout'), 5000));
                 await Promise.race([loadHistoricalFromSupabase(), supabaseTimeout]);
                 
-                // 캐시 충분 여부 체크 (90% 이상 데이터 있으면 OK)
-                const hasEnoughData = (arr, minRecords = 100) => {
-                    return arr && arr.length >= minRecords;
-                };
-                
-                // ═══════════════════════════════════════════════════════════
-                // 🔴 실시간 필수 데이터 (항상 API 호출)
-                // ═══════════════════════════════════════════════════════════
-                console.log('   🔴 Fetching real-time data...');
-                await Promise.allSettled([
-                    fetchBinancePrice(),      // 현재 가격 (실시간 필수)
-                    fetchCoinGecko(),         // 시총, dominance (실시간 필수)
-                ]);
-                
-                // ═══════════════════════════════════════════════════════════
-                // 📦 캐시 우선 데이터 (신선한 캐시 있으면 API 스킵)
-                // ═══════════════════════════════════════════════════════════
-                
-                // Price History (차트용)
+                // Supabase 가격 데이터가 부족하면 Binance에서 3년치 가져오기
                 const hasEnoughPriceData = state.supabasePriceHistory?.length >= 900;
-                if (hasEnoughPriceData) {
-                    console.log('   📦 Price chart: using cache (' + state.supabasePriceHistory.length + ' records)');
-                    state.priceHistory = state.supabasePriceHistory;
-                    updateCombinedPriceVolumeChart(1095);
-                    setDataSource('price-chart', 'supabase');
-                } else {
-                    console.log('   📡 Price chart: fetching from Binance (cache insufficient)');
+                if (!hasEnoughPriceData) {
+                    console.log('   Supabase price data insufficient, fetching 3Y from Binance...');
                     await fetchBinanceHistory(1095);
                 }
                 
-                // Dominance / ETH-BTC History
+                // 빠른 API들
+                await Promise.allSettled([
+                    fetchBinancePrice(),
+                    fetchCoinGecko(),
+                    fetchFearGreed(),
+                ]);
+                
+                // Dominance와 ETH/BTC 데이터 가져오기 (Supabase 없으면 API 사용)
                 const hasEnoughDominanceData = state.supabaseDominanceHistory?.length >= 100;
                 const hasEnoughEthBtcData = state.supabaseEthBtcHistory?.length >= 100;
-                if (hasEnoughDominanceData && hasEnoughEthBtcData) {
-                    console.log('   📦 Dominance/ETH-BTC: using cache');
-                    setDataSource('dominance-chart', 'supabase');
-                    setDataSource('ethbtc-chart', 'supabase');
-                } else {
-                    console.log('   📡 Dominance/ETH-BTC: fetching from APIs');
+                if (!hasEnoughDominanceData || !hasEnoughEthBtcData) {
+                    console.log('   Fetching Dominance/ETH-BTC from external APIs...');
                     await fetchDominanceAndEthBtc(1095);
                 }
                 
-                // TVL
-                if (hasEnoughData(state.supabaseTvlHistory, 100)) {
-                    console.log('   📦 TVL: using cache (' + state.supabaseTvlHistory.length + ')');
-                    setDataSource('tvl-chart', 'supabase');
-                } else {
-                    console.log('   📡 TVL: fetching from DefiLlama');
-                    fetchDefiLlama();
-                }
-                
-                // Staking
-                if (hasEnoughData(state.supabaseStakingHistory, 100)) {
-                    console.log('   📦 Staking: using cache (' + state.supabaseStakingHistory.length + ')');
-                    setDataSource('staking-chart', 'supabase');
-                } else {
-                    console.log('   📡 Staking: fetching from API');
-                    fetchStaking();
-                }
-                
-                // Fear & Greed
-                if (hasEnoughData(state.supabaseFearGreedHistory, 100)) {
-                    console.log('   📦 Fear & Greed: using cache (' + state.supabaseFearGreedHistory.length + ')');
-                    setDataSource('feargreed-chart', 'supabase');
-                } else {
-                    console.log('   📡 Fear & Greed: fetching from API');
-                    fetchFearGreed();
-                }
-                
-                // Funding Rate
-                if (hasEnoughData(state.supabaseFundingHistory, 100)) {
-                    console.log('   📦 Funding Rate: using cache (' + state.supabaseFundingHistory.length + ')');
-                    setDataSource('funding-chart', 'supabase');
-                } else {
-                    console.log('   📡 Funding Rate: fetching from Binance');
-                    fetchFundingRate();
-                }
-                
-                // Stablecoins
-                if (hasEnoughData(state.supabaseStablesHistory, 100)) {
-                    console.log('   📦 Stablecoins: using cache (' + state.supabaseStablesHistory.length + ')');
-                    setDataSource('stables-chart', 'supabase');
-                    setDataSource('stablecoin-chart', 'supabase');
-                } else {
-                    console.log('   📡 Stablecoins: fetching from DefiLlama');
-                    fetchStablecoinMcap();
-                }
-                
-                // DEX Volume
-                if (hasEnoughData(state.supabaseDexHistory, 100)) {
-                    console.log('   📦 DEX Volume: using cache (' + state.supabaseDexHistory.length + ')');
-                    setDataSource('dex-chart', 'supabase');
-                }
-                
-                // Exchange Reserve
-                if (hasEnoughData(state.supabaseReserveHistory, 100)) {
-                    console.log('   📦 Exchange Reserve: using cache (' + state.supabaseReserveHistory.length + ')');
-                    setDataSource('reserve-chart', 'supabase', '', state.reserveDataSource || '');
-                } else {
-                    fetchExchangeReserve();
-                }
-                
-                // Lending TVL
-                if (hasEnoughData(state.supabaseLendingHistory, 100)) {
-                    console.log('   📦 Lending TVL: using cache (' + state.supabaseLendingHistory.length + ')');
-                    setDataSource('lending-chart', 'supabase');
-                } else {
-                    fetchLendingProtocolsTVL();
-                }
-                
-                // Volatility
-                if (hasEnoughData(state.supabaseVolatilityHistory, 100)) {
-                    console.log('   📦 Volatility: using cache (' + state.supabaseVolatilityHistory.length + ')');
-                    setDataSource('volatility-chart', 'supabase');
-                } else {
-                    calculateVolatility();
-                }
-                
-                // NVT
-                if (hasEnoughData(state.supabaseNvtHistory, 100)) {
-                    console.log('   📦 NVT: using cache (' + state.supabaseNvtHistory.length + ')');
-                    setDataSource('nvt-chart', 'supabase');
-                } else {
-                    calculateAndUpdateNVT();
-                }
-                
-                // 나머지 백그라운드 데이터 (캐시 없는 것만)
-                const remainingFetches = [];
-                
-                if (!state.supabaseGasHistory?.length) remainingFetches.push(fetchGasPrice());
-                if (!state.supabaseSupplyHistory?.length) remainingFetches.push(fetchSupplyDynamics());
-                if (!state.supabaseBlobHistory?.length) {
-                    remainingFetches.push(fetchBlobCount());
-                    remainingFetches.push(fetchBlobFees());
-                }
-                remainingFetches.push(fetchBaseFee()); // 실시간 가스 가격
-                
-                Promise.allSettled(remainingFetches).then(() => {
-                    renderValuations();
-                    initHistoricalAnalysis();
+                // 느린 API들 (백그라운드)
+                Promise.allSettled([
+                    fetchDefiLlama(),
+                    fetchStaking(),
+                    fetchFundingRate(),
+                    fetchStablecoinMcap(),
+                    fetchExchangeReserve(),
+                    fetchTransactions(),
+                    fetchBaseFee(),
+                    fetchBlobCount(),
+                    fetchLendingProtocolsTVL(),
+                ]).then(() => {
+                    Promise.allSettled([
+                        fetchGasPrice(),
+                        fetchSupplyDynamics(),
+                        fetchBlobFees(),
+                        calculateAndUpdateNVT(),
+                        calculateVolatility(),
+                    ]).then(() => {
+                        renderValuations();
+                        initHistoricalAnalysis();
+                    });
                 });
                 
             } catch (e) {
@@ -21126,20 +20687,14 @@
         }
         
         // 데이터 소스 표시 함수 - footer 소스 텍스트 옆에 인라인 표시
-        function setDataSource(chartId, source, apiName = '', actualSource = '') {
+        function setDataSource(chartId, source, apiName = '') {
             try {
-                // actualSource: Supabase에 저장된 데이터의 실제 소스 (etherscan, defillama, estimated 등)
-                // source가 'supabase'인 경우에도 actualSource가 'estimated'면 Est. 배지 표시
-                
                 // 메인 가격 차트는 별도 처리
                 if (chartId === 'price-chart') {
                     const sourceEl = document.getElementById('price-chart-source');
                     if (sourceEl) {
                         sourceEl.className = 'price-chart-source';
-                        if (actualSource === 'estimated') {
-                            sourceEl.classList.add('fallback');
-                            sourceEl.textContent = 'Est.';
-                        } else if (source === 'supabase') {
+                        if (source === 'supabase') {
                             sourceEl.classList.add('cached');
                             sourceEl.textContent = 'Cached';
                         } else if (source === 'api') {
@@ -21175,26 +20730,20 @@
                 const badge = document.createElement('span');
                 badge.className = 'data-source-badge';
                 
-                // actualSource가 'estimated'면 항상 Est. 배지
-                if (actualSource === 'estimated') {
-                    badge.classList.add('fallback');
-                    badge.textContent = 'Est.';
-                } else if (source === 'supabase') {
-                    // Supabase에서 가져온 실제 데이터는 Cached로 표시
+                if (source === 'supabase') {
                     badge.classList.add('cached');
                     badge.textContent = 'Cached';
                 } else if (source === 'api') {
                     badge.classList.add('live');
-                    badge.textContent = apiName || 'Live';
+                    badge.textContent = apiName || 'API';  // 출처 표시
                 } else {
                     badge.classList.add('fallback');
                     badge.textContent = 'Est.';
                 }
                 
-                sourceSpan.appendChild(document.createTextNode(' '));
                 sourceSpan.appendChild(badge);
             } catch (e) {
-                // Silent fail for non-critical UI updates
+                // ignore
             }
         }
 
