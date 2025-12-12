@@ -20204,7 +20204,7 @@
                     state.stakedEth = 34000000;
                     state.stakingHistory = simpleHistory(34e6);
                 }
-                setEl('staked-eth', (state.stakedEth / 1e6).toFixed(2) + 'M ETH');
+                setEl('staked-value', (state.stakedEth / 1e6).toFixed(2) + 'M ETH');
                 safeCall(() => updateMetricChart('staking-chart', stakingChart, state.stakingHistory, '#6366f1', 'staking'), 'staking');
                 setDataSource('staking-chart', stakingSource, 'Beaconcha.in');
                 
@@ -20220,7 +20220,7 @@
                     state.l2Tvl = 12000000000;
                     state.l2History = simpleHistory(12e9);
                 }
-                setEl('l2-tvl', '$' + (state.l2Tvl / 1e9).toFixed(2) + 'B');
+                setEl('l2-value', '$' + (state.l2Tvl / 1e9).toFixed(2) + 'B');
                 safeCall(() => updateMetricChart('l2-chart', l2Chart, state.l2History, '#a855f7', 'l2'), 'l2');
                 setDataSource('l2-chart', l2Source, 'L2Beat');
                 
@@ -20507,6 +20507,15 @@
                     state.gasUtilization = state.gasUtilization || 60;
                     state.netSupplyChange = ((state.dailyIssuance - state.dailyBurn) * 365 / 120000000) * 100;
                     state.baseFee = state.baseFee || 12;
+                    
+                    // Gas Utilization History - supabaseGasHistory가 있으면 사용
+                    if (state.supabaseGasHistory?.length > 0) {
+                        state.gasUtilizationHistory = state.supabaseGasHistory.map(d => ({
+                            date: d.date,
+                            value: d.utilization > 0 ? d.utilization : 60
+                        }));
+                        state.gasUtilization = state.gasUtilizationHistory[state.gasUtilizationHistory.length - 1]?.value || 60;
+                    }
                     
                     setEl('gas-utilization-value', state.gasUtilization.toFixed(1) + '%');
                     setEl('daily-burn-value', state.dailyBurn.toLocaleString() + ' ETH');
