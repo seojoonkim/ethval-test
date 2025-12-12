@@ -1133,12 +1133,15 @@
         async function batchUpsert(table, records, conflictKey = 'date', batchSize = 1500) {
             if (!records || records.length === 0) return { error: null, count: 0 };
             
+            // 복합키(쉼표 포함)인 경우 배치 사이즈 줄임
+            const actualBatchSize = conflictKey.includes(',') ? Math.min(batchSize, 500) : batchSize;
+            
             let totalInserted = 0;
-            const batches = Math.ceil(records.length / batchSize);
+            const batches = Math.ceil(records.length / actualBatchSize);
             
             for (let i = 0; i < batches; i++) {
-                const start = i * batchSize;
-                const end = Math.min(start + batchSize, records.length);
+                const start = i * actualBatchSize;
+                const end = Math.min(start + actualBatchSize, records.length);
                 const batch = records.slice(start, end);
                 
                 // 최대 3회 재시도
@@ -1167,9 +1170,12 @@
                     return { error: lastError, count: totalInserted };
                 }
                 
-                // 진행상황 (1500개마다 또는 마지막)
-                if (totalInserted % 1500 === 0 || i === batches - 1) {
-                    log(`  📤 ${totalInserted}/${records.length} saved`, 'info');
+                // 진행상황 로그 (대용량일 때만, 마지막 배치는 항상)
+                const logInterval = records.length > 3000 ? 1500 : 999999;
+                if (totalInserted % logInterval === 0 || i === batches - 1) {
+                    if (records.length > 100) {
+                        log(`  📤 ${totalInserted}/${records.length} saved`, 'info');
+                    }
                 }
                 
                 // 배치 간 딜레이 (Supabase rate limit 회피)
