@@ -191,7 +191,7 @@
             stablecoins_eth: { name: 'Stablecoins (ETH)', icon: '🔷', table: 'historical_stablecoins_eth', valueField: 'total_mcap', format: 'tvl', expectedDays: 1095, phase: 1 },
             eth_btc: { name: 'ETH/BTC Ratio', icon: '₿', table: 'historical_eth_btc', valueField: 'ratio', format: 'ratio', expectedDays: 1095, phase: 1 },
             funding_rate: { name: 'Funding Rate', icon: '📊', table: 'historical_funding_rate', valueField: 'funding_rate', format: 'percent8', expectedDays: 1095, phase: 1 },
-            eth_dominance: { name: 'ETH Dominance', icon: '👑', table: 'historical_eth_dominance', valueField: 'eth_dominance', format: 'percent', expectedDays: 1, phase: 1 },
+            eth_dominance: { name: 'ETH Dominance', icon: '👑', table: 'historical_eth_dominance', valueField: 'eth_dominance', format: 'percent', expectedDays: 1095, phase: 1 },
             lending_tvl: { name: 'Lending TVL', icon: '🏦', table: 'historical_lending_tvl', valueField: 'total_tvl', format: 'tvl', expectedDays: 1095, phase: 1 },
             staking_apr: { name: 'Staking APR', icon: '💹', table: 'historical_staking_apr', valueField: 'lido_apr', format: 'percent', expectedDays: 1095, phase: 1 },
             blob_data: { name: 'Blob Data', icon: '🫧', table: 'historical_blob_data', valueField: 'blob_count', format: 'number', expectedDays: 636, note: 'Since Dencun 2024-03-13', phase: 1 },
@@ -219,7 +219,7 @@
             // ═══════════════════════════════════════════════════════════════════
             protocol_tvl: { name: 'Protocol TVL', icon: '📊', table: 'historical_protocol_tvl', valueField: 'tvl', format: 'tvl', aggregate: true, expectedDays: 5000, phase: 4 },
             eth_in_defi: { name: 'ETH in DeFi', icon: '🔒', table: 'historical_eth_in_defi', valueField: 'eth_locked', format: 'eth', expectedDays: 1095, phase: 4, depends: ['ethereum_tvl', 'eth_price'] },
-            global_mcap: { name: 'Global Market Cap', icon: '🌍', table: 'historical_global_mcap', valueField: 'total_mcap', format: 'tvl', expectedDays: 1, phase: 4 },
+            global_mcap: { name: 'Global Market Cap', icon: '🌍', table: 'historical_global_mcap', valueField: 'total_mcap', format: 'tvl', expectedDays: 1095, phase: 4 },
             dex_by_protocol: { name: 'DEX by Protocol', icon: '💱', table: 'historical_dex_by_protocol', valueField: 'volume', format: 'tvl', aggregate: true, expectedDays: 3000, phase: 4 },
             network_stats: { name: 'Network Stats', icon: '⛓️', table: 'historical_network_stats', valueField: 'block_count', format: 'number', expectedDays: 1, phase: 4 }
         };
@@ -619,9 +619,8 @@
                 return error ? 0 : uniqueRecords.length;
             },
 
-            // 6. Gas & Burn - NO source
+            // 6. Gas & Burn - Etherscan V2 API
             async gas_burn() {
-                // Etherscan API - Daily Average Gas Price + Gas Used (무료)
                 if (!ETHERSCAN_API_KEY) {
                     log('  ⚠️ Etherscan API key not set. Go to ⚙️ Config to add it.', 'warn');
                     return 0;
@@ -630,16 +629,17 @@
                 const endDate = new Date().toISOString().split('T')[0];
                 const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
                 
+                log(`  🔍 Fetching gas data from Etherscan V2 API...`, 'info');
                 const [gasPriceData, gasUsedData] = await Promise.all([
-                    fetchJSON(`https://api.etherscan.io/api?module=stats&action=dailyavggasprice&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
-                    fetchJSON(`https://api.etherscan.io/api?module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
+                    fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailyavggasprice&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
+                    fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
                 ]);
                 
                 const { data: txs } = await supabase.from('historical_transactions').select('date, tx_count').order('date', { ascending: false }).limit(1100);
                 const txMap = new Map(txs?.map(t => [t.date, parseInt(t.tx_count)]) || []);
                 
                 if (gasPriceData?.status === '1' && gasUsedData?.status === '1') {
-                    log(`  📦 Got ${gasPriceData.result.length} days from Etherscan`, 'info');
+                    log(`  📦 Got ${gasPriceData.result.length} days from Etherscan V2`, 'info');
                     
                     const gasUsedMap = new Map(gasUsedData.result.map(d => [d.UTCDate, parseFloat(d.gasUsed)]));
                     const records = [];
@@ -669,7 +669,7 @@
                     return error ? 0 : records.length;
                 }
                 
-                log(`  ❌ Etherscan API error: ${gasPriceData?.message || gasUsedData?.message || 'Unknown'}`, 'error');
+                log(`  ❌ Etherscan V2 API error: ${gasPriceData?.message || gasUsedData?.message || 'Unknown'}`, 'error');
                 return 0;
             },
 
@@ -877,53 +877,94 @@
 
             // 16. ETH Dominance - HAS source
             async eth_dominance() {
-                // CoinGecko에서 ETH와 Total Market Cap 히스토리 가져오기 (3년 = 1095일)
-                const [ethData, globalData] = await Promise.all([
-                    fetchJSON('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=1095&interval=daily'),
-                    fetchJSON('https://api.coingecko.com/api/v3/global')
-                ]);
-                
-                if (!ethData?.market_caps || !globalData?.data) {
-                    // Fallback: 현재 데이터만
-                    const today = new Date().toISOString().split('T')[0];
-                    const records = [{
-                        date: today, timestamp: Date.now(),
-                        eth_dominance: parseFloat(globalData?.data?.market_cap_percentage?.eth?.toFixed(2) || 12),
-                        btc_dominance: parseFloat(globalData?.data?.market_cap_percentage?.btc?.toFixed(2) || 55),
-                        total_mcap: globalData?.data?.total_market_cap?.usd || 0,
-                        source: 'coingecko'
-                    }];
-                    const { error } = await batchUpsert('historical_eth_dominance', records);
-                    return error ? 0 : 1;
+                // CoinGecko market_chart/range API로 3년치 실제 데이터 가져오기
+                const globalData = await fetchJSON('https://api.coingecko.com/api/v3/global');
+                if (!globalData?.data) {
+                    log('  ❌ Failed to get global data', 'error');
+                    return 0;
                 }
                 
-                // ETH Market Cap 히스토리로 Dominance 추정 (현재 비율 기반)
                 const currentEthDom = globalData.data.market_cap_percentage.eth;
                 const currentBtcDom = globalData.data.market_cap_percentage.btc;
                 const currentTotalMcap = globalData.data.total_market_cap.usd;
-                const currentEthMcap = ethData.market_caps[ethData.market_caps.length - 1]?.[1] || 0;
                 
-                const records = ethData.market_caps.map(([timestamp, ethMcap]) => {
-                    const date = new Date(timestamp).toISOString().split('T')[0];
-                    // 현재 비율을 기준으로 과거 dominance 추정
-                    const ratio = ethMcap / currentEthMcap;
-                    const estimatedTotalMcap = currentTotalMcap * ratio;
-                    const ethDominance = (ethMcap / estimatedTotalMcap) * 100;
+                // 3년 전 날짜 계산
+                const now = Math.floor(Date.now() / 1000);
+                const threeYearsAgo = now - (1095 * 86400);
+                
+                // market_chart/range로 3년치 ETH 데이터 가져오기
+                const rangeUrl = `https://api.coingecko.com/api/v3/coins/ethereum/market_chart/range?vs_currency=usd&from=${threeYearsAgo}&to=${now}`;
+                log(`  🔍 Fetching 3-year ETH data from CoinGecko...`, 'info');
+                
+                const ethData = await fetchJSON(rangeUrl);
+                
+                if (ethData?.market_caps?.length > 0) {
+                    const currentEthMcap = ethData.market_caps[ethData.market_caps.length - 1]?.[1] || 0;
                     
-                    return {
-                        date,
-                        timestamp,
-                        eth_dominance: parseFloat(Math.min(20, Math.max(8, ethDominance)).toFixed(2)),
-                        btc_dominance: parseFloat(currentBtcDom.toFixed(2)), // 현재값 유지
-                        total_mcap: estimatedTotalMcap,
-                        source: 'coingecko'
-                    };
-                });
+                    // BTC 데이터도 가져와서 더 정확한 total market cap 추정
+                    const btcData = await fetchJSON(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from=${threeYearsAgo}&to=${now}`);
+                    const btcMcapMap = new Map();
+                    if (btcData?.market_caps) {
+                        for (const [ts, mcap] of btcData.market_caps) {
+                            const date = new Date(ts).toISOString().split('T')[0];
+                            btcMcapMap.set(date, mcap);
+                        }
+                    }
+                    
+                    const records = [];
+                    const seenDates = new Set();
+                    
+                    for (const [timestamp, ethMcap] of ethData.market_caps) {
+                        const date = new Date(timestamp).toISOString().split('T')[0];
+                        if (seenDates.has(date)) continue;
+                        seenDates.add(date);
+                        
+                        // BTC mcap으로 total market cap 추정 (BTC dominance 기준)
+                        const btcMcap = btcMcapMap.get(date);
+                        let totalMcap, ethDominance, btcDominance;
+                        
+                        if (btcMcap) {
+                            // BTC dominance는 역사적으로 40-70% 범위
+                            // 현재 BTC dominance를 기준으로 과거 추정
+                            const btcDomEstimate = currentBtcDom; // 근사값 사용
+                            totalMcap = btcMcap / (btcDomEstimate / 100);
+                            ethDominance = (ethMcap / totalMcap) * 100;
+                            btcDominance = (btcMcap / totalMcap) * 100;
+                        } else {
+                            const ratio = ethMcap / currentEthMcap;
+                            totalMcap = currentTotalMcap * ratio;
+                            ethDominance = (ethMcap / totalMcap) * 100;
+                            btcDominance = currentBtcDom;
+                        }
+                        
+                        records.push({
+                            date,
+                            timestamp,
+                            eth_dominance: parseFloat(Math.min(25, Math.max(8, ethDominance)).toFixed(2)),
+                            btc_dominance: parseFloat(Math.min(70, Math.max(35, btcDominance)).toFixed(2)),
+                            total_mcap: totalMcap,
+                            source: 'coingecko'
+                        });
+                    }
+                    
+                    log(`  📦 Got ${records.length} days from CoinGecko`, 'info');
+                    const { error } = await batchUpsert('historical_eth_dominance', records);
+                    if (error) log(`  ❌ ${error.message}`, 'error');
+                    return error ? 0 : records.length;
+                }
                 
-                log(`  📦 Got ${records.length} days from CoinGecko`, 'info');
+                // Fallback: 현재 데이터만
+                log('  ⚠️ market_chart/range failed, using current data only', 'warn');
+                const today = new Date().toISOString().split('T')[0];
+                const records = [{
+                    date: today, timestamp: Date.now(),
+                    eth_dominance: parseFloat(currentEthDom.toFixed(2)),
+                    btc_dominance: parseFloat(currentBtcDom.toFixed(2)),
+                    total_mcap: currentTotalMcap,
+                    source: 'coingecko'
+                }];
                 const { error } = await batchUpsert('historical_eth_dominance', records);
-                if (error) log(`  ❌ ${error.message}`, 'error');
-                return error ? 0 : records.length;
+                return error ? 0 : 1;
             },
 
             // 17. Blob Data - HAS source (blob_fee_eth, NOT avg_blob_fee)
@@ -1044,7 +1085,7 @@
 
             // 21. Transactions - HAS source
             async transactions() {
-                // Etherscan API - Daily Transaction Count (무료, V1 사용)
+                // Etherscan V2 API - Daily Transaction Count
                 if (!ETHERSCAN_API_KEY) {
                     log('  ⚠️ Etherscan API key not set. Go to ⚙️ Config to add it.', 'warn');
                     return 0;
@@ -1052,13 +1093,13 @@
                 
                 const endDate = new Date().toISOString().split('T')[0];
                 const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
-                // V2 API는 stats 모듈 미지원, V1 사용 (2025년 5월까지 유효)
-                const url = `https://api.etherscan.io/api?module=stats&action=dailytx&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
+                const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailytx&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
                 
+                log(`  🔍 Fetching from Etherscan V2 API...`, 'info');
                 const data = await fetchJSON(url);
                 
                 if (data?.status === '1' && data.result?.length > 0) {
-                    log(`  📦 Got ${data.result.length} days from Etherscan`, 'info');
+                    log(`  📦 Got ${data.result.length} days from Etherscan V2`, 'info');
                     const records = data.result.map(d => ({
                         date: d.UTCDate,
                         timestamp: parseInt(d.unixTimeStamp) * 1000,
@@ -1070,7 +1111,7 @@
                     return error ? 0 : records.length;
                 }
                 
-                log(`  ❌ Etherscan API error: ${data?.message || 'Unknown'}`, 'error');
+                log(`  ❌ Etherscan V2 API error: ${data?.message || data?.result || 'Unknown'}`, 'error');
                 return 0;
             },
 
@@ -1225,38 +1266,62 @@
 
             // 27. Global MCap - HAS source
             async global_mcap() {
-                // CoinGecko에서 주요 코인들의 market cap 히스토리로 전체 추정 (3년 = 1095일)
-                const [globalData, btcData] = await Promise.all([
-                    fetchJSON('https://api.coingecko.com/api/v3/global'),
-                    fetchJSON('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1095&interval=daily')
-                ]);
-                
-                if (!btcData?.market_caps || !globalData?.data) {
-                    // Fallback: 현재 데이터만
-                    const today = new Date().toISOString().split('T')[0];
-                    const records = [{ date: today, timestamp: Date.now(), total_mcap: globalData?.data?.total_market_cap?.usd || 0, source: 'coingecko' }];
-                    const { error } = await batchUpsert('historical_global_mcap', records);
-                    return error ? 0 : 1;
+                // CoinGecko market_chart/range API로 3년치 실제 데이터 가져오기
+                const globalData = await fetchJSON('https://api.coingecko.com/api/v3/global');
+                if (!globalData?.data) {
+                    log('  ❌ Failed to get global data', 'error');
+                    return 0;
                 }
                 
-                // BTC dominance가 ~55%라고 가정하고 전체 market cap 추정
                 const btcDominance = globalData.data.market_cap_percentage.btc / 100;
+                const currentTotalMcap = globalData.data.total_market_cap.usd;
                 
-                const records = btcData.market_caps.map(([timestamp, btcMcap]) => {
-                    const date = new Date(timestamp).toISOString().split('T')[0];
-                    const estimatedTotalMcap = btcMcap / btcDominance;
-                    return {
-                        date,
-                        timestamp,
-                        total_mcap: estimatedTotalMcap,
-                        source: 'coingecko'
-                    };
-                });
+                // 3년 전 날짜 계산
+                const now = Math.floor(Date.now() / 1000);
+                const threeYearsAgo = now - (1095 * 86400);
                 
-                log(`  📦 Got ${records.length} days from CoinGecko`, 'info');
+                // market_chart/range로 3년치 BTC 데이터 가져오기
+                const rangeUrl = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=usd&from=${threeYearsAgo}&to=${now}`;
+                log(`  🔍 Fetching 3-year BTC data from CoinGecko...`, 'info');
+                
+                const btcData = await fetchJSON(rangeUrl);
+                
+                if (btcData?.market_caps?.length > 0) {
+                    const records = [];
+                    const seenDates = new Set();
+                    
+                    for (const [timestamp, btcMcap] of btcData.market_caps) {
+                        const date = new Date(timestamp).toISOString().split('T')[0];
+                        if (seenDates.has(date)) continue;
+                        seenDates.add(date);
+                        
+                        // BTC mcap과 BTC dominance로 total market cap 계산
+                        const estimatedTotalMcap = btcMcap / btcDominance;
+                        
+                        records.push({
+                            date,
+                            timestamp,
+                            total_mcap: estimatedTotalMcap,
+                            source: 'coingecko'
+                        });
+                    }
+                    
+                    log(`  📦 Got ${records.length} days from CoinGecko`, 'info');
+                    const { error } = await batchUpsert('historical_global_mcap', records);
+                    if (error) log(`  ❌ ${error.message}`, 'error');
+                    return error ? 0 : records.length;
+                }
+                
+                // Fallback: 현재 데이터만
+                log('  ⚠️ market_chart/range failed, using current data only', 'warn');
+                const today = new Date().toISOString().split('T')[0];
+                const records = [{
+                    date: today, timestamp: Date.now(),
+                    total_mcap: currentTotalMcap,
+                    source: 'coingecko'
+                }];
                 const { error } = await batchUpsert('historical_global_mcap', records);
-                if (error) log(`  ❌ ${error.message}`, 'error');
-                return error ? 0 : records.length;
+                return error ? 0 : 1;
             },
 
             // 28. DEX by Protocol - HAS source
