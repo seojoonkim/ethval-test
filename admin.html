@@ -1743,33 +1743,51 @@
                 try {
                     const apiKey = ETHERSCAN_API_KEY || 'YourApiKeyToken';
                     
-                    // Fetch last 1024 blocks
+                    // Use V1 API instead of V2
                     const response = await fetch(
-                        `https://api.etherscan.io/v2/api?chainid=1&module=proxy&action=eth_feeHistory&blockcount=0x400&newestblock=latest&rewardpercentiles=[]&apikey=${apiKey}`
+                        `https://api.etherscan.io/api?module=proxy&action=eth_feeHistory&blockCount=0x400&newestBlock=latest&rewardPercentiles=[]&apikey=${apiKey}`
                     );
                     const data = await response.json();
                     
-                    // Debug: log response structure
-                    log(`  📡 API response: ${data?.result ? 'has result' : 'no result'}, keys: ${data?.result ? Object.keys(data.result).join(', ') : 'N/A'}`, 'info');
+                    // Debug: log full response structure
+                    log(`  📡 API status: ${data?.status || data?.jsonrpc || 'unknown'}`, 'info');
                     
-                    if (data && data.result) {
-                        const result = data.result;
+                    // Handle different response formats
+                    let result = data?.result;
+                    
+                    // If result is a string (hex error), log it
+                    if (typeof result === 'string') {
+                        log(`  📡 Result is string: ${result.substring(0, 100)}`, 'info');
+                        result = null;
+                    }
+                    
+                    if (result && typeof result === 'object') {
+                        log(`  📡 Result keys: ${Object.keys(result).slice(0, 10).join(', ')}...`, 'info');
+                        
                         const blobGasUsedRatios = result.blobGasUsedRatio || [];
                         const baseFeePerBlobGas = result.baseFeePerBlobGas || [];
                         
-                        log(`  📊 blobGasUsedRatio: ${blobGasUsedRatios.length} items, baseFeePerBlobGas: ${baseFeePerBlobGas.length} items`, 'info');
+                        log(`  📊 blobGasUsedRatio: ${blobGasUsedRatios.length} items`, 'info');
+                        
+                        // Sample first few values for debugging
+                        if (blobGasUsedRatios.length > 0) {
+                            log(`  📊 Sample ratios: ${blobGasUsedRatios.slice(0, 3).join(', ')}`, 'info');
+                        }
+                        if (baseFeePerBlobGas.length > 0) {
+                            log(`  📊 Sample fees: ${baseFeePerBlobGas.slice(0, 3).join(', ')}`, 'info');
+                        }
                         
                         if (blobGasUsedRatios.length > 0) {
                             let totalBlobGasUsed = 0;
                             let totalBlobFees = 0;
                             
                             for (let i = 0; i < blobGasUsedRatios.length; i++) {
-                                const ratio = blobGasUsedRatios[i];
+                                const ratio = parseFloat(blobGasUsedRatios[i]) || 0;
                                 const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
                                 totalBlobGasUsed += blobGasUsed;
                                 
                                 if (baseFeePerBlobGas[i]) {
-                                    const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16);
+                                    const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16) || 0;
                                     totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
                                 }
                             }
@@ -1791,10 +1809,10 @@
                             
                             log(`  ✅ eth_feeHistory: ${blobGasUsedRatios.length} blocks → ${dailyBlobCount.toLocaleString()} blobs/day, ${dailyBlobFees.toFixed(4)} ETH fees`, 'success');
                         } else {
-                            log(`  ⚠️ No blob data in API response`, 'warn');
+                            log(`  ⚠️ No blobGasUsedRatio in response`, 'warn');
                         }
                     } else {
-                        log(`  ⚠️ Invalid API response: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
+                        log(`  ⚠️ Invalid result type: ${typeof result}`, 'warn');
                     }
                 } catch (e) {
                     log(`  ⚠️ eth_feeHistory API failed: ${e.message}`, 'warn');
