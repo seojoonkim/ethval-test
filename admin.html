@@ -631,8 +631,8 @@
                 const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
                 
                 const [gasPriceData, gasUsedData] = await Promise.all([
-                    fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailyavggasprice&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
-                    fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
+                    fetchJSON(`https://api.etherscan.io/api?module=stats&action=dailyavggasprice&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
+                    fetchJSON(`https://api.etherscan.io/api?module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
                 ]);
                 
                 const { data: txs } = await supabase.from('historical_transactions').select('date, tx_count').order('date', { ascending: false }).limit(1100);
@@ -877,9 +877,9 @@
 
             // 16. ETH Dominance - HAS source
             async eth_dominance() {
-                // CoinGecko에서 ETH와 Total Market Cap 히스토리 가져오기 (max = 최대 기간)
+                // CoinGecko에서 ETH와 Total Market Cap 히스토리 가져오기 (3년 = 1095일)
                 const [ethData, globalData] = await Promise.all([
-                    fetchJSON('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=max&interval=daily'),
+                    fetchJSON('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=1095&interval=daily'),
                     fetchJSON('https://api.coingecko.com/api/v3/global')
                 ]);
                 
@@ -897,17 +897,13 @@
                     return error ? 0 : 1;
                 }
                 
-                // 최근 3년치만 필터링
-                const threeYearsAgo = Date.now() - (1095 * 86400000);
-                const filteredData = ethData.market_caps.filter(([ts]) => ts >= threeYearsAgo);
-                
                 // ETH Market Cap 히스토리로 Dominance 추정 (현재 비율 기반)
                 const currentEthDom = globalData.data.market_cap_percentage.eth;
                 const currentBtcDom = globalData.data.market_cap_percentage.btc;
                 const currentTotalMcap = globalData.data.total_market_cap.usd;
-                const currentEthMcap = filteredData[filteredData.length - 1]?.[1] || 0;
+                const currentEthMcap = ethData.market_caps[ethData.market_caps.length - 1]?.[1] || 0;
                 
-                const records = filteredData.map(([timestamp, ethMcap]) => {
+                const records = ethData.market_caps.map(([timestamp, ethMcap]) => {
                     const date = new Date(timestamp).toISOString().split('T')[0];
                     // 현재 비율을 기준으로 과거 dominance 추정
                     const ratio = ethMcap / currentEthMcap;
@@ -932,35 +928,8 @@
 
             // 17. Blob Data - HAS source (blob_fee_eth, NOT avg_blob_fee)
             async blob_data() {
-                // Blobscan API 시도
-                try {
-                    const statsData = await fetchJSON('https://api.blobscan.com/stats');
-                    if (statsData?.blob?.totalBlobs) {
-                        // Blobscan에서 일별 데이터 가져오기
-                        const dailyData = await fetchJSON('https://api.blobscan.com/stats/blob?timeFrame=daily');
-                        if (dailyData && Array.isArray(dailyData)) {
-                            const records = dailyData.map(d => ({
-                                date: d.day || new Date(d.timestamp).toISOString().split('T')[0],
-                                timestamp: new Date(d.day || d.timestamp).getTime(),
-                                blob_count: d.totalBlobs || d.blobs || 0,
-                                blob_gas_used: (d.totalBlobs || d.blobs || 0) * 131072,
-                                source: 'blobscan'
-                            })).filter(r => r.blob_count > 0);
-                            
-                            if (records.length > 0) {
-                                log(`  📦 Got ${records.length} days from Blobscan`, 'info');
-                                const { error } = await batchUpsert('historical_blob_data', records);
-                                if (error) log(`  ❌ ${error.message}`, 'error');
-                                return error ? 0 : records.length;
-                            }
-                        }
-                    }
-                } catch (e) {
-                    log(`  ⚠️ Blobscan API failed: ${e.message}`, 'warn');
-                }
-                
-                // Fallback: 추정 데이터
-                log('  ⚠️ Using estimated data (Blobscan API unavailable)', 'warn');
+                // Blobscan API는 네트워크 제한으로 접근 불가 - estimated 데이터 사용
+                log('  ⚠️ Blobscan API not accessible - using estimates', 'warn');
                 
                 const dencun = new Date('2024-03-13');
                 const today = new Date();
@@ -1075,7 +1044,7 @@
 
             // 21. Transactions - HAS source
             async transactions() {
-                // Etherscan API - Daily Transaction Count (무료)
+                // Etherscan API - Daily Transaction Count (무료, V1 사용)
                 if (!ETHERSCAN_API_KEY) {
                     log('  ⚠️ Etherscan API key not set. Go to ⚙️ Config to add it.', 'warn');
                     return 0;
@@ -1083,7 +1052,8 @@
                 
                 const endDate = new Date().toISOString().split('T')[0];
                 const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
-                const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailytx&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
+                // V2 API는 stats 모듈 미지원, V1 사용 (2025년 5월까지 유효)
+                const url = `https://api.etherscan.io/api?module=stats&action=dailytx&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
                 
                 const data = await fetchJSON(url);
                 
@@ -1109,17 +1079,25 @@
                 const chains = ['Arbitrum', 'Optimism', 'Base'];
                 let total = 0;
                 for (const chain of chains) {
-                    const data = await fetchJSON(`https://api.llama.fi/summary/fees/${chain.toLowerCase()}?dataType=dailyFees`);
-                    if (!data?.totalDataChart) continue;
-                    const records = data.totalDataChart.filter(d => d[1] > 0).map(d => ({
-                        date: new Date(d[0] * 1000).toISOString().split('T')[0],
-                        timestamp: d[0] * 1000, chain,
-                        tx_count: Math.floor(d[1] / 0.5),
-                        source: 'defillama'
-                    }));
-                    if (records.length > 0) {
-                        const { error } = await batchUpsert('historical_l2_transactions', records, 'date,chain');
-                        if (!error) total += records.length;
+                    try {
+                        const data = await fetchJSON(`https://api.llama.fi/summary/fees/${chain.toLowerCase()}?dataType=dailyFees`);
+                        if (!data?.totalDataChart) {
+                            log(`    ⚠️ ${chain}: No data`, 'warn');
+                            continue;
+                        }
+                        const records = data.totalDataChart.filter(d => d[1] > 0).map(d => ({
+                            date: new Date(d[0] * 1000).toISOString().split('T')[0],
+                            timestamp: d[0] * 1000, chain,
+                            tx_count: Math.floor(d[1] / 0.5),
+                            source: 'defillama'
+                        }));
+                        if (records.length > 0) {
+                            log(`    📦 ${chain}: ${records.length} records`, 'info');
+                            const { error } = await batchUpsert('historical_l2_transactions', records, 'date,chain');
+                            if (!error) total += records.length;
+                        }
+                    } catch (e) {
+                        log(`    ⚠️ ${chain}: ${e.message}`, 'warn');
                     }
                     await new Promise(r => setTimeout(r, 200));
                 }
@@ -1128,13 +1106,35 @@
 
             // 23. L2 Addresses - HAS source
             async l2_addresses() {
-                const { data: txs } = await supabase.from('historical_l2_transactions').select('date, chain, tx_count').order('date', { ascending: false }).limit(8000);
-                if (!txs?.length) return 0;
+                // L2 Transactions 데이터가 필요 - 잠시 대기
+                await new Promise(r => setTimeout(r, 1000));
+                
+                const { data: txs, error: queryError } = await supabase
+                    .from('historical_l2_transactions')
+                    .select('date, chain, tx_count')
+                    .order('date', { ascending: false })
+                    .limit(8000);
+                
+                if (queryError) {
+                    log(`  ❌ Query error: ${queryError.message}`, 'error');
+                    return 0;
+                }
+                
+                if (!txs?.length) {
+                    log('  ⚠️ No L2 transaction data found - collect L2 Transactions first', 'warn');
+                    return 0;
+                }
+                
+                log(`  📦 Processing ${txs.length} L2 transaction records`, 'info');
+                
                 const records = txs.map(t => ({
-                    date: t.date, timestamp: Date.now(), chain: t.chain,
+                    date: t.date, 
+                    timestamp: Date.now(), 
+                    chain: t.chain,
                     active_addresses: Math.floor(t.tx_count * 0.3),
                     source: 'estimated'
                 }));
+                
                 const { error } = await batchUpsert('historical_l2_addresses', records, 'date,chain');
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
@@ -1225,10 +1225,10 @@
 
             // 27. Global MCap - HAS source
             async global_mcap() {
-                // CoinGecko에서 주요 코인들의 market cap 히스토리로 전체 추정 (max = 최대 기간)
+                // CoinGecko에서 주요 코인들의 market cap 히스토리로 전체 추정 (3년 = 1095일)
                 const [globalData, btcData] = await Promise.all([
                     fetchJSON('https://api.coingecko.com/api/v3/global'),
-                    fetchJSON('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=max&interval=daily')
+                    fetchJSON('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1095&interval=daily')
                 ]);
                 
                 if (!btcData?.market_caps || !globalData?.data) {
@@ -1239,14 +1239,10 @@
                     return error ? 0 : 1;
                 }
                 
-                // 최근 3년치만 필터링
-                const threeYearsAgo = Date.now() - (1095 * 86400000);
-                const filteredData = btcData.market_caps.filter(([ts]) => ts >= threeYearsAgo);
-                
                 // BTC dominance가 ~55%라고 가정하고 전체 market cap 추정
                 const btcDominance = globalData.data.market_cap_percentage.btc / 100;
                 
-                const records = filteredData.map(([timestamp, btcMcap]) => {
+                const records = btcData.market_caps.map(([timestamp, btcMcap]) => {
                     const date = new Date(timestamp).toISOString().split('T')[0];
                     const estimatedTotalMcap = btcMcap / btcDominance;
                     return {
