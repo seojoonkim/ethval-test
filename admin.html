@@ -149,6 +149,15 @@
                         <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileDailyIssuance').click()">Select CSV</button>
                         <div class="csv-status" id="statusDailyIssuance">No file</div>
                     </div>
+                    <!-- Blob Data (Dune) -->
+                    <div class="csv-upload-box" id="dropBlob" ondrop="handleDrop(event, 'blob')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">🫧</div>
+                        <div class="csv-title">Blob Data (Dune)</div>
+                        <a href="https://dune.com/queries/new" target="_blank" class="csv-link">📥 Query Dune</a>
+                        <input type="file" id="fileBlob" accept=".csv" onchange="handleFile(event, 'blob')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileBlob').click()">Select CSV</button>
+                        <div class="csv-status" id="statusBlob">No file</div>
+                    </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                     <button class="btn btn-success" id="importBtn" onclick="importAllCSV()" disabled>📥 Import All to Supabase</button>
@@ -240,7 +249,7 @@
         let supabase;
         
         // CSV Data Storage
-        const csvData = { burn: null, tx: null, gas: null, supply: null, dailyIssuance: null };
+        const csvData = { burn: null, tx: null, gas: null, supply: null, dailyIssuance: null, blob: null };
 
         // ═══════════════════════════════════════════════════════════════════
         // CSV UPLOAD & PARSING
@@ -323,6 +332,33 @@
                                 continue;
                             }
                             
+                        } else if (type === 'blob') {
+                            // Dune Blob CSV: date, blob_count, blob_gas_used
+                            // Date format: "2024-03-13 00:00:00.000 UTC"
+                            const blobCount = parseInt(parts[1].replace(/,/g, ''));
+                            const blobGasUsed = parseInt(parts[2].replace(/,/g, ''));
+                            
+                            // Parse Dune date format
+                            let dateObj;
+                            if (dateStr.includes(' ')) {
+                                // "2024-03-13 00:00:00.000 UTC" -> "2024-03-13"
+                                dateObj = new Date(dateStr.split(' ')[0]);
+                            } else {
+                                dateObj = new Date(dateStr);
+                            }
+                            timestamp = Math.floor(dateObj.getTime() / 1000);
+                            const isoDate = dateObj.toISOString().split('T')[0];
+                            
+                            records.push({ 
+                                date: isoDate, 
+                                timestamp: timestamp * 1000, // milliseconds
+                                blob_count: blobCount,
+                                blob_gas_used: blobGasUsed,
+                                blob_fee_eth: 0, // Not available in Dune query
+                                source: 'dune'
+                            });
+                            continue;
+                            
                         } else if (parts.length === 2) {
                             // 2-column format: Date, Value (no timestamp)
                             const valueStr = parts[1].replace(/,/g, '');
@@ -361,7 +397,7 @@
                     
                     csvData[type] = records;
                     
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     const boxEl = document.getElementById(`drop${typeMap[type]}`);
                     
@@ -374,7 +410,7 @@
                     
                 } catch (err) {
                     console.error(`[${type}] Parse error:`, err);
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     statusEl.textContent = `✗ Parse error: ${err.message}`;
                     statusEl.className = 'csv-status error';
@@ -408,7 +444,7 @@
             const btn = document.getElementById('importBtn');
             const loaded = Object.values(csvData).filter(v => v !== null).length;
             btn.disabled = loaded === 0;
-            btn.textContent = `📥 Import ${loaded}/5 Files to Supabase`;
+            btn.textContent = `📥 Import ${loaded}/6 Files to Supabase`;
         }
         
         async function importAllCSV() {
@@ -559,6 +595,25 @@
                     }
                     
                     totalImported += issuanceRecords.length;
+                }
+                
+                // Import Blob data (from Dune CSV)
+                if (csvData.blob) {
+                    progressEl.textContent = 'Importing Blob data...';
+                    
+                    // blob records are already formatted correctly in processCSV
+                    const blobRecords = csvData.blob;
+                    
+                    log(`📦 Blob Data: Importing ${blobRecords.length} records from Dune`, 'info');
+                    
+                    const { error: blobError } = await batchUpsert('historical_blob_data', blobRecords);
+                    if (blobError) {
+                        log(`⚠️ Blob Data save error: ${blobError.message}`, 'warn');
+                    } else {
+                        log(`✅ Blob Data: Imported ${blobRecords.length} records`, 'success');
+                    }
+                    
+                    totalImported += blobRecords.length;
                 }
                 
                 progressEl.textContent = `✓ Done! Imported ${totalImported} total records`;
