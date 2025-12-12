@@ -16119,6 +16119,18 @@
         }
 
         async function fetchDefiLlama() {
+            // Supabase 데이터가 충분하면 API 호출 건너뛰기
+            const hasAllData = 
+                state.supabaseTvlHistory?.length > 30 &&
+                state.supabaseDexHistory?.length > 30 &&
+                state.supabaseFeesHistory?.length > 30 &&
+                state.supabaseStablecoinHistory?.length > 30;
+            
+            if (hasAllData) {
+                console.log('fetchDefiLlama: Skipping - Supabase data sufficient');
+                return;
+            }
+            
             console.log('fetchDefiLlama: Starting PARALLEL fetch...');
             
             // ═══════════════════════════════════════════════════════════════════
@@ -17581,6 +17593,17 @@
 
         // ETH in DeFi Lending - fetch from DefiLlama (optimized parallel with timeout)
         async function fetchLendingProtocolsTVL() {
+            // Supabase 데이터가 충분하면 건너뛰기
+            if (state.supabaseLendingHistory && state.supabaseLendingHistory.length > 30) {
+                console.log('   Using Supabase Lending TVL data:', state.supabaseLendingHistory.length, 'points');
+                state.lendingHistory = state.supabaseLendingHistory;
+                state.lendingTvl = state.lendingHistory[state.lendingHistory.length - 1].value;
+                const lendingTvlEl = document.getElementById('lending-tvl');
+                if (lendingTvlEl) lendingTvlEl.textContent = '$' + (state.lendingTvl / 1e9).toFixed(2) + 'B';
+                updateLendingChart();
+                return;
+            }
+            
             let totalLendingTvl = 0;
             
             try {
@@ -17886,24 +17909,97 @@
                 // Supabase 데이터 우선 사용
                 if (state.supabaseBlobHistory && state.supabaseBlobHistory.length > 10) {
                     console.log('   Using Supabase Blob data:', state.supabaseBlobHistory.length, 'points');
-                    state.blobFeesHistory = state.supabaseBlobHistory.map(d => ({
+                    
+                    // 오늘 날짜 제외 (불완전 데이터)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const filteredHistory = state.supabaseBlobHistory.filter(d => {
+                        const dDate = new Date(d.date);
+                        dDate.setHours(0, 0, 0, 0);
+                        return dDate.getTime() < today.getTime();
+                    });
+                    
+                    state.blobFeesHistory = filteredHistory.map(d => ({
                         date: d.date,
                         value: d.fees
                     }));
-                    state.blobCountHistory = state.supabaseBlobHistory.map(d => ({
+                    state.blobCountHistory = filteredHistory.map(d => ({
                         date: d.date,
                         value: d.count
                     }));
-                    if (state.blobFeesHistory.length > 0) {
-                        state.blobFees = state.blobFeesHistory[state.blobFeesHistory.length - 1].value;
+                    
+                    // 주간 합계 계산 (최근 7일)
+                    const last7Days = filteredHistory.slice(-7);
+                    const weeklyFees = last7Days.reduce((sum, d) => sum + (d.fees || 0), 0);
+                    const weeklyCount = last7Days.reduce((sum, d) => sum + (d.count || 0), 0);
+                    
+                    state.blobFees = weeklyFees;
+                    state.blobCount = weeklyCount;
+                    
+                    console.log(`   Blob 7d totals: ${weeklyFees.toFixed(2)} ETH, ${fmt.num(weeklyCount)} blobs`);
+                    
+                    // Blob Fees가 0이면 API에서 실시간 데이터 가져오기
+                    if (weeklyFees < 0.01) {
+                        console.log('   Blob fees is 0, fetching from API...');
+                        try {
+                            const rpcResponse = await fetch('https://ethereum.publicnode.com', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    jsonrpc: '2.0',
+                                    method: 'eth_feeHistory',
+                                    params: ['0x400', 'latest', []],
+                                    id: 1
+                                })
+                            });
+                            const rpcData = await rpcResponse.json();
+                            
+                            if (rpcData.result && rpcData.result.blobGasUsedRatio) {
+                                const blobGasUsedRatios = rpcData.result.blobGasUsedRatio || [];
+                                const baseFeePerBlobGas = rpcData.result.baseFeePerBlobGas || [];
+                                
+                                if (blobGasUsedRatios.length > 0) {
+                                    const MAX_BLOB_GAS_PER_BLOCK = 786432;
+                                    let totalBlobFees = 0;
+                                    
+                                    for (let i = 0; i < blobGasUsedRatios.length; i++) {
+                                        const ratio = blobGasUsedRatios[i];
+                                        const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
+                                        if (baseFeePerBlobGas[i]) {
+                                            const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16);
+                                            totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
+                                        }
+                                    }
+                                    
+                                    // Scale to 7 days
+                                    const scaleFactor = 7 * 7200 / blobGasUsedRatios.length;
+                                    state.blobFees = totalBlobFees * scaleFactor;
+                                    console.log(`   API blob fees: ${state.blobFees.toFixed(2)} ETH/week`);
+                                }
+                            }
+                        } catch (e) {
+                            console.log('   API fetch failed, using estimate');
+                            state.blobFees = 75; // 추정치
+                        }
                     }
-                    if (state.blobCountHistory.length > 0) {
-                        state.blobCount = state.blobCountHistory[state.blobCountHistory.length - 1].value;
-                    }
+                    
                     const blobEl = document.getElementById('blob-fees-value');
                     if (blobEl) blobEl.textContent = state.blobFees.toFixed(1) + ' ETH';
                     const blobCountEl = document.getElementById('blob-count-value');
                     if (blobCountEl) blobCountEl.textContent = fmt.num(state.blobCount);
+                    
+                    // Source badge 업데이트
+                    const feesBadge = document.getElementById('blob-fees-source');
+                    const countBadge = document.getElementById('blob-count-source');
+                    if (feesBadge) {
+                        feesBadge.textContent = state.blobFees > 0.01 ? 'API' : 'Est.';
+                        feesBadge.className = 'source-badge ' + (state.blobFees > 0.01 ? 'api' : 'estimated');
+                    }
+                    if (countBadge) {
+                        countBadge.textContent = 'Supabase';
+                        countBadge.className = 'source-badge api';
+                    }
+                    
                     updateBlobFeesChart();
                     updateBlobCountChart();
                     return;
@@ -20600,58 +20696,108 @@
         }
         
         async function loadDataInBackground() {
-            console.log('   Loading real data in background...');
+            console.log('   Background: Checking for missing data...');
             
             try {
-                // Supabase 먼저 (5초 타임아웃)
-                const supabaseTimeout = new Promise(r => setTimeout(() => r('timeout'), 5000));
-                await Promise.race([loadHistoricalFromSupabase(), supabaseTimeout]);
+                // ═══════════════════════════════════════════════════════════════════
+                // 원칙: Supabase 데이터가 있으면 외부 API 호출 안함
+                // 외부 API는 Supabase 데이터가 없거나 부족할 때만 호출
+                // ═══════════════════════════════════════════════════════════════════
                 
-                // Supabase 가격 데이터가 부족하면 Binance에서 3년치 가져오기
-                const hasEnoughPriceData = state.supabasePriceHistory?.length >= 900;
-                if (!hasEnoughPriceData) {
-                    console.log('   Supabase price data insufficient, fetching 3Y from Binance...');
-                    await fetchBinanceHistory(1095);
+                const MIN_DATA_POINTS = 30; // 최소 30일치 있어야 충분
+                
+                // 실시간 가격만 항상 가져오기 (현재가 업데이트용)
+                await fetchBinancePrice();
+                
+                // 필요한 API만 조건부 호출
+                const apiCalls = [];
+                
+                // 가격 히스토리 - Supabase 부족하면 Binance
+                if (!state.supabasePriceHistory?.length || state.supabasePriceHistory.length < 900) {
+                    console.log('   → Price history insufficient, fetching from Binance');
+                    apiCalls.push(fetchBinanceHistory(1095));
                 }
                 
-                // 빠른 API들
+                // TVL - Supabase 없으면 DefiLlama
+                if (!state.supabaseTvlHistory?.length || state.supabaseTvlHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → TVL data missing, fetching from DefiLlama');
+                    apiCalls.push(fetchDefiLlama());
+                }
+                
+                // Staking - Supabase 없으면 외부 API
+                if (!state.supabaseStakingHistory?.length || state.supabaseStakingHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Staking data missing, fetching from API');
+                    apiCalls.push(fetchStaking());
+                }
+                
+                // Funding Rate - Supabase 없으면 외부 API
+                if (!state.supabaseFundingHistory?.length || state.supabaseFundingHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Funding data missing, fetching from API');
+                    apiCalls.push(fetchFundingRate());
+                }
+                
+                // Stablecoin - Supabase 없으면 외부 API
+                if (!state.supabaseStablecoinHistory?.length || state.supabaseStablecoinHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Stablecoin data missing, fetching from API');
+                    apiCalls.push(fetchStablecoinMcap());
+                }
+                
+                // Exchange Reserve - Supabase 없으면 외부 API
+                if (!state.supabaseReserveHistory?.length || state.supabaseReserveHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Reserve data missing, fetching from API');
+                    apiCalls.push(fetchExchangeReserve());
+                }
+                
+                // Gas - Supabase 없으면 외부 API
+                if (!state.supabaseGasHistory?.length || state.supabaseGasHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Gas data missing, fetching from API');
+                    apiCalls.push(fetchBaseFee());
+                    apiCalls.push(fetchGasPrice());
+                }
+                
+                // Blob - Supabase 없으면 외부 API
+                if (!state.supabaseBlobHistory?.length || state.supabaseBlobHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Blob data missing, fetching from API');
+                    apiCalls.push(fetchBlobFees());
+                }
+                
+                // Lending TVL - Supabase 없으면 외부 API
+                if (!state.supabaseLendingHistory?.length || state.supabaseLendingHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Lending data missing, fetching from API');
+                    apiCalls.push(fetchLendingProtocolsTVL());
+                }
+                
+                // Dominance/ETH-BTC - Supabase 없으면 외부 API
+                if (!state.supabaseDominanceHistory?.length || state.supabaseDominanceHistory.length < MIN_DATA_POINTS ||
+                    !state.supabaseEthBtcHistory?.length || state.supabaseEthBtcHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Dominance/ETH-BTC data missing, fetching from API');
+                    apiCalls.push(fetchDominanceAndEthBtc(1095));
+                }
+                
+                // Fear & Greed - Supabase 없으면 외부 API
+                if (!state.supabaseFearGreedHistory?.length || state.supabaseFearGreedHistory.length < MIN_DATA_POINTS) {
+                    console.log('   → Fear & Greed data missing, fetching from API');
+                    apiCalls.push(fetchFearGreed());
+                }
+                
+                // 필요한 API들만 병렬 호출
+                if (apiCalls.length > 0) {
+                    console.log(`   Background: Fetching ${apiCalls.length} missing datasets...`);
+                    await Promise.allSettled(apiCalls);
+                } else {
+                    console.log('   Background: All data available from Supabase ✓');
+                }
+                
+                // 계산 함수들 (항상 실행)
                 await Promise.allSettled([
-                    fetchBinancePrice(),
-                    fetchCoinGecko(),
-                    fetchFearGreed(),
+                    fetchSupplyDynamics(),
+                    calculateAndUpdateNVT(),
+                    calculateVolatility(),
                 ]);
                 
-                // Dominance와 ETH/BTC 데이터 가져오기 (Supabase 없으면 API 사용)
-                const hasEnoughDominanceData = state.supabaseDominanceHistory?.length >= 100;
-                const hasEnoughEthBtcData = state.supabaseEthBtcHistory?.length >= 100;
-                if (!hasEnoughDominanceData || !hasEnoughEthBtcData) {
-                    console.log('   Fetching Dominance/ETH-BTC from external APIs...');
-                    await fetchDominanceAndEthBtc(1095);
-                }
-                
-                // 느린 API들 (백그라운드)
-                Promise.allSettled([
-                    fetchDefiLlama(),
-                    fetchStaking(),
-                    fetchFundingRate(),
-                    fetchStablecoinMcap(),
-                    fetchExchangeReserve(),
-                    fetchTransactions(),
-                    fetchBaseFee(),
-                    fetchBlobCount(),
-                    fetchLendingProtocolsTVL(),
-                ]).then(() => {
-                    Promise.allSettled([
-                        fetchGasPrice(),
-                        fetchSupplyDynamics(),
-                        fetchBlobFees(),
-                        calculateAndUpdateNVT(),
-                        calculateVolatility(),
-                    ]).then(() => {
-                        renderValuations();
-                        initHistoricalAnalysis();
-                    });
-                });
+                // 최종 렌더링
+                renderValuations();
+                initHistoricalAnalysis();
                 
             } catch (e) {
                 console.error('Background loading error:', e);
