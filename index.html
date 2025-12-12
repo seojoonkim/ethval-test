@@ -14829,11 +14829,11 @@
                 
                 // 모든 테이블 병렬 로딩
                 const [priceData, tvlData, stakingData, gasData, activeData, supplyData, fgData, feesData,
-                       ethBtcData, dominanceData, dexData, stablesData, stablesEthData, fundingData, reserveData, blobData, lendingData, volatilityData, l2TvlData, nvtData] = await Promise.all([
+                       ethBtcData, dominanceData, dexData, stablesData, stablesEthData, fundingData, reserveData, blobData, lendingData, volatilityData, l2TvlData, nvtData, issuanceData] = await Promise.all([
                     safeFetchSupabase(`${baseUrl}/historical_eth_price?select=date,close,volume&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_ethereum_tvl?select=date,tvl&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_staking?select=date,total_staked_eth,avg_apr,total_validators&order=date.desc&limit=${limit}`),
-                    safeFetchSupabase(`${baseUrl}/historical_gas_burn?select=date,avg_gas_price_gwei,eth_burnt,transaction_count&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_gas_burn?select=date,avg_gas_price_gwei,eth_burnt,transaction_count,gas_utilization&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_active_addresses?select=date,active_addresses&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_eth_supply?select=date,eth_supply,eth2_staking,burnt_fees&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_fear_greed?select=date,value,classification&order=date.desc&limit=${limit}`),
@@ -14849,7 +14849,8 @@
                     safeFetchSupabase(`${baseUrl}/historical_lending_tvl?select=date,total_tvl&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_volatility?select=date,volatility_30d&order=date.desc&limit=${limit}`),
                     safeFetchSupabase(`${baseUrl}/historical_l2_tvl?select=date,chain,tvl&order=date.desc&limit=${limit * 10}`),
-                    safeFetchSupabase(`${baseUrl}/historical_nvt?select=date,nvt_ratio&order=date.desc&limit=${limit}`)
+                    safeFetchSupabase(`${baseUrl}/historical_nvt?select=date,nvt_ratio&order=date.desc&limit=${limit}`),
+                    safeFetchSupabase(`${baseUrl}/historical_daily_issuance?select=date,daily_issuance&order=date.desc&limit=${limit}`)
                 ]);
                 
                 // 데이터 저장 (10개 이상일 때만)
@@ -14877,7 +14878,11 @@
                 if (gasData.length > 10) {
                     console.log(`   ✓ Gas: ${gasData.length} records`);
                     state.supabaseGasHistory = gasData.map(d => ({
-                        date: new Date(d.date), gasPrice: parseFloat(d.avg_gas_price_gwei || 0), burnt: parseFloat(d.eth_burnt || 0), txCount: parseInt(d.transaction_count || 0)
+                        date: new Date(d.date), 
+                        gasPrice: parseFloat(d.avg_gas_price_gwei || 0), 
+                        burnt: parseFloat(d.eth_burnt || 0), 
+                        txCount: parseInt(d.transaction_count || 0),
+                        utilization: parseFloat(d.gas_utilization || 0)
                     })).reverse();
                 }
                 
@@ -14981,6 +14986,14 @@
                 if (nvtData.length > 10) {
                     console.log(`   ✓ NVT: ${nvtData.length} records`);
                     state.supabaseNvtHistory = nvtData.map(d => ({ date: new Date(d.date), value: parseFloat(d.nvt_ratio) })).reverse();
+                }
+                
+                if (issuanceData.length > 10) {
+                    console.log(`   ✓ Daily Issuance: ${issuanceData.length} records`);
+                    state.supabaseIssuanceHistory = issuanceData.map(d => ({ 
+                        date: new Date(d.date), 
+                        value: parseFloat(d.daily_issuance || 0) 
+                    })).reverse();
                 }
                 
                 // ═══════════════════════════════════════════════════════════════════
@@ -17938,66 +17951,21 @@
                     
                     console.log(`   Blob 7d totals: ${weeklyFees.toFixed(2)} ETH, ${fmt.num(weeklyCount)} blobs`);
                     
-                    // Blob Fees가 0이면 API에서 실시간 데이터 가져오기
-                    if (weeklyFees < 0.01) {
-                        console.log('   Blob fees is 0, fetching from API...');
-                        try {
-                            const rpcResponse = await fetch('https://ethereum.publicnode.com', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    jsonrpc: '2.0',
-                                    method: 'eth_feeHistory',
-                                    params: ['0x400', 'latest', []],
-                                    id: 1
-                                })
-                            });
-                            const rpcData = await rpcResponse.json();
-                            
-                            if (rpcData.result && rpcData.result.blobGasUsedRatio) {
-                                const blobGasUsedRatios = rpcData.result.blobGasUsedRatio || [];
-                                const baseFeePerBlobGas = rpcData.result.baseFeePerBlobGas || [];
-                                
-                                if (blobGasUsedRatios.length > 0) {
-                                    const MAX_BLOB_GAS_PER_BLOCK = 786432;
-                                    let totalBlobFees = 0;
-                                    
-                                    for (let i = 0; i < blobGasUsedRatios.length; i++) {
-                                        const ratio = blobGasUsedRatios[i];
-                                        const blobGasUsed = ratio * MAX_BLOB_GAS_PER_BLOCK;
-                                        if (baseFeePerBlobGas[i]) {
-                                            const baseFeeWei = parseInt(baseFeePerBlobGas[i], 16);
-                                            totalBlobFees += (blobGasUsed * baseFeeWei) / 1e18;
-                                        }
-                                    }
-                                    
-                                    // Scale to 7 days
-                                    const scaleFactor = 7 * 7200 / blobGasUsedRatios.length;
-                                    state.blobFees = totalBlobFees * scaleFactor;
-                                    console.log(`   API blob fees: ${state.blobFees.toFixed(2)} ETH/week`);
-                                }
-                            }
-                        } catch (e) {
-                            console.log('   API fetch failed, using estimate');
-                            state.blobFees = 75; // 추정치
-                        }
-                    }
-                    
                     const blobEl = document.getElementById('blob-fees-value');
                     if (blobEl) blobEl.textContent = state.blobFees.toFixed(1) + ' ETH';
                     const blobCountEl = document.getElementById('blob-count-value');
                     if (blobCountEl) blobCountEl.textContent = fmt.num(state.blobCount);
                     
-                    // Source badge 업데이트
+                    // Source badge 업데이트 - Supabase 사용
                     const feesBadge = document.getElementById('blob-fees-source');
                     const countBadge = document.getElementById('blob-count-source');
                     if (feesBadge) {
-                        feesBadge.textContent = state.blobFees > 0.01 ? 'API' : 'Est.';
-                        feesBadge.className = 'source-badge ' + (state.blobFees > 0.01 ? 'api' : 'estimated');
+                        feesBadge.textContent = 'Cached';
+                        feesBadge.className = 'source-badge cached';
                     }
                     if (countBadge) {
-                        countBadge.textContent = 'Supabase';
-                        countBadge.className = 'source-badge api';
+                        countBadge.textContent = 'Cached';
+                        countBadge.className = 'source-badge cached';
                     }
                     
                     updateBlobFeesChart();
@@ -18523,6 +18491,12 @@
         // ========================================
 
         async function fetchSupplyDynamics() {
+            // Supabase 데이터로 이미 처리된 경우 건너뛰기
+            if (state.supplyDynamicsFromSupabase) {
+                console.log('   Supply Dynamics: Already loaded from Supabase, skipping API');
+                return;
+            }
+            
             try {
                 // console.log('   Fetching Supply Dynamics...');
                 
@@ -18592,6 +18566,13 @@
                 updateDailyBurnChart(365);
                 updateDailyIssuanceChart(365);
                 updateNetSupplyChart(365);
+                
+                // 데이터 소스 레이블 설정
+                const dataSource = state.supabaseGasHistory?.length > 0 ? 'supabase' : 'api';
+                setDataSource('gas-utilization-chart', dataSource);
+                setDataSource('daily-burn-chart', dataSource);
+                setDataSource('daily-issuance-chart', dataSource);
+                setDataSource('net-supply-chart', dataSource);
                 
                 console.log('   Gas Utilization:', state.gasUtilization.toFixed(1) + '%');
                 console.log('   Daily Burn:', fmt.num(state.dailyBurn), 'ETH | Issuance:', fmt.num(state.dailyIssuance), 'ETH');
@@ -20437,50 +20418,94 @@
                 setDataSource('nvt-chart', nvtSource, 'Calculated');
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 15. Supply Dynamics - Supabase Gas 데이터 사용
+                // 15. Supply Dynamics - Supabase 데이터 사용 (Burn, Issuance)
                 // ═══════════════════════════════════════════════════════════════════
                 let supplySource = 'fallback';
+                const hasSupplyData = state.supabaseGasHistory?.length > 30 && state.supabaseIssuanceHistory?.length > 30;
                 
-                if (state.supabaseGasHistory?.length > 0) {
+                if (hasSupplyData) {
                     supplySource = 'supabase';
-                    // Gas 데이터에서 Supply Dynamics 추출
-                    const latestGas = state.supabaseGasHistory[state.supabaseGasHistory.length - 1];
-                    state.dailyBurn = latestGas.burnt || 1500;
-                    state.baseFee = latestGas.gasPrice || 12;
+                    console.log(`   Supply Dynamics: Using Supabase (Burn: ${state.supabaseGasHistory.length}, Issuance: ${state.supabaseIssuanceHistory.length} points)`);
                     
-                    // 히스토리 생성
+                    // Daily Burn 히스토리
                     state.burnHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.burnt || 0 }));
+                    state.dailyBurn = state.burnHistory[state.burnHistory.length - 1]?.value || 1500;
+                    
+                    // Daily Issuance 히스토리
+                    state.issuanceHistory = state.supabaseIssuanceHistory.map(d => ({ date: d.date, value: d.value || 0 }));
+                    state.dailyIssuance = state.issuanceHistory[state.issuanceHistory.length - 1]?.value || 2800;
+                    
+                    // Gas Utilization - Supabase 데이터 사용 (없으면 gas price 기반 추정)
+                    const hasUtilizationData = state.supabaseGasHistory.some(d => d.utilization > 0);
+                    if (hasUtilizationData) {
+                        state.gasUtilizationHistory = state.supabaseGasHistory.map(d => ({
+                            date: d.date, 
+                            value: d.utilization > 0 ? d.utilization : Math.min(95, Math.max(45, 50 + (d.gasPrice || 10) * 0.8))
+                        }));
+                    } else {
+                        // Fallback: Gas price가 높을수록 utilization도 높음 (대략적 추정)
+                        state.gasUtilizationHistory = state.supabaseGasHistory.map(d => {
+                            const util = Math.min(95, Math.max(45, 50 + (d.gasPrice || 10) * 0.8));
+                            return { date: d.date, value: util };
+                        });
+                    }
+                    state.gasUtilization = state.gasUtilizationHistory[state.gasUtilizationHistory.length - 1]?.value || 60;
+                    
+                    // Net Supply 계산 - Burn과 Issuance 날짜 매칭
+                    const burnByDate = new Map(state.burnHistory.map(d => [d.date.toISOString().split('T')[0], d.value]));
+                    const issuanceByDate = new Map(state.issuanceHistory.map(d => [d.date.toISOString().split('T')[0], d.value]));
+                    
+                    state.netSupplyHistory = [];
+                    const allDates = [...new Set([...burnByDate.keys(), ...issuanceByDate.keys()])].sort();
+                    const totalSupply = state.ethSupply || 120000000;
+                    
+                    for (const dateStr of allDates) {
+                        const burn = burnByDate.get(dateStr) || 0;
+                        const issuance = issuanceByDate.get(dateStr) || state.dailyIssuance;
+                        const dailyNet = issuance - burn;
+                        const annualizedPct = (dailyNet * 365 / totalSupply) * 100;
+                        state.netSupplyHistory.push({ date: new Date(dateStr), value: annualizedPct });
+                    }
+                    
+                    state.netSupplyChange = ((state.dailyIssuance - state.dailyBurn) * 365 / totalSupply) * 100;
+                    state.baseFee = state.supabaseGasHistory[state.supabaseGasHistory.length - 1]?.gasPrice || 12;
                     state.baseFeeHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.gasPrice || 0 }));
                     state.txEthHistory = state.supabaseGasHistory.map(d => ({ date: d.date, value: d.txCount || 0 }));
                     
-                    console.log(`   Supply Dynamics: Using Supabase Gas data (${state.supabaseGasHistory.length} points)`);
+                    // UI 업데이트
+                    setEl('gas-utilization-value', state.gasUtilization.toFixed(1) + '%');
+                    setEl('daily-burn-value', fmt.num(state.dailyBurn) + ' ETH');
+                    setEl('daily-issuance-value', fmt.num(state.dailyIssuance) + ' ETH');
+                    setEl('net-supply-change', (state.netSupplyChange >= 0 ? '+' : '') + state.netSupplyChange.toFixed(2) + '%/yr');
+                    
+                    // 차트 렌더링
+                    safeCall(() => updateGasUtilizationChart(365), 'gasUtil');
+                    safeCall(() => updateDailyBurnChart(365), 'burn');
+                    safeCall(() => updateDailyIssuanceChart(365), 'issuance');
+                    safeCall(() => updateNetSupplyChart(365), 'netSupply');
+                    setDataSource('gas-utilization-chart', supplySource);
+                    setDataSource('daily-burn-chart', supplySource);
+                    setDataSource('daily-issuance-chart', supplySource);
+                    setDataSource('net-supply-chart', supplySource);
+                    
+                    // Supabase 데이터로 처리 완료 표시
+                    state.supplyDynamicsFromSupabase = true;
                 } else {
+                    // Supabase 데이터 부족 - 값만 기본값으로 설정, 차트는 fetchSupplyDynamics에서 처리
                     state.dailyBurn = state.dailyBurn || 1500;
+                    state.dailyIssuance = state.dailyIssuance || 2800;
+                    state.gasUtilization = state.gasUtilization || 60;
+                    state.netSupplyChange = ((state.dailyIssuance - state.dailyBurn) * 365 / 120000000) * 100;
                     state.baseFee = state.baseFee || 12;
+                    
+                    setEl('gas-utilization-value', state.gasUtilization.toFixed(1) + '%');
+                    setEl('daily-burn-value', state.dailyBurn.toLocaleString() + ' ETH');
+                    setEl('daily-issuance-value', state.dailyIssuance.toLocaleString() + ' ETH');
+                    setEl('net-supply-change', (state.netSupplyChange >= 0 ? '+' : '') + state.netSupplyChange.toFixed(2) + '%/yr');
+                    
+                    state.supplyDynamicsFromSupabase = false;
+                    console.log('   Supply Dynamics: Supabase data insufficient, will use API');
                 }
-                
-                state.gasUtilization = state.gasUtilization || 60;
-                state.dailyIssuance = state.dailyIssuance || 2800;
-                state.netSupplyChange = ((state.dailyIssuance - state.dailyBurn) * 365 / 120000000) * 100;
-                
-                setEl('gas-utilization-value', state.gasUtilization.toFixed(1) + '%');
-                setEl('daily-burn-value', state.dailyBurn.toLocaleString() + ' ETH');
-                setEl('daily-issuance-value', state.dailyIssuance.toLocaleString() + ' ETH');
-                setEl('net-supply-change', (state.netSupplyChange >= 0 ? '+' : '') + state.netSupplyChange.toFixed(2) + '%/yr');
-                
-                if (!state.gasUtilizationHistory?.length) state.gasUtilizationHistory = simpleHistory(60);
-                if (!state.burnHistory?.length) state.burnHistory = simpleHistory(1500);
-                if (!state.issuanceHistory?.length) state.issuanceHistory = simpleHistory(2800);
-                if (!state.netSupplyHistory?.length) state.netSupplyHistory = simpleHistory(0.4);
-                
-                safeCall(() => updateGasUtilizationChart(365), 'gasUtil');
-                safeCall(() => updateDailyBurnChart(365), 'burn');
-                safeCall(() => updateDailyIssuanceChart(365), 'issuance');
-                safeCall(() => updateNetSupplyChart(365), 'netSupply');
-                setDataSource('gas-utilization-chart', supplySource);
-                setDataSource('daily-burn-chart', supplySource);
-                setDataSource('daily-issuance-chart', supplySource);
-                setDataSource('net-supply-chart', supplySource);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 16. Base Fee

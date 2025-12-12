@@ -1365,15 +1365,17 @@
                 // Etherscan V2 시도 (PRO 전용일 수 있음)
                 if (ETHERSCAN_API_KEY) {
                     log(`  🔍 Trying Etherscan V2 API...`, 'info');
-                    const [gasPriceData, gasUsedData] = await Promise.all([
+                    const [gasPriceData, gasUsedData, gasLimitData] = await Promise.all([
                         fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailyavggasprice&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
-                        fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
+                        fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailygasused&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`),
+                        fetchJSON(`https://api.etherscan.io/v2/api?chainid=1&module=stats&action=dailyavggaslimit&startdate=${startDate}&enddate=${endDate}&sort=asc&apikey=${ETHERSCAN_API_KEY}`)
                     ]);
                     
                     if (gasPriceData?.status === '1' && gasUsedData?.status === '1') {
                         log(`  📦 Got ${gasPriceData.result.length} days from Etherscan V2`, 'info');
                         
                         const gasUsedMap = new Map(gasUsedData.result.map(d => [d.UTCDate, parseFloat(d.gasUsed)]));
+                        const gasLimitMap = new Map(gasLimitData?.result?.map(d => [d.UTCDate, parseFloat(d.gasLimit)]) || []);
                         const records = [];
                         
                         for (const d of gasPriceData.result) {
@@ -1382,14 +1384,25 @@
                             
                             const gasPrice = parseFloat(d.avgGasPrice_Wei) / 1e9;
                             const gasUsed = gasUsedMap.get(d.UTCDate) || 0;
+                            const gasLimit = gasLimitMap.get(d.UTCDate) || 0;
                             const baseFeeGwei = gasPrice * 0.8;
                             const ethBurnt = (gasUsed * baseFeeGwei) / 1e9;
+                            
+                            // Gas Utilization 계산 (gasUsed / gasLimit * 100)
+                            let gasUtilization = 50; // 기본값
+                            if (gasLimit > 0 && gasUsed > 0) {
+                                gasUtilization = Math.min(100, Math.max(0, (gasUsed / gasLimit) * 100));
+                            } else {
+                                // gasLimit 데이터 없으면 gas price로 추정
+                                gasUtilization = Math.min(95, Math.max(45, 50 + gasPrice * 0.5));
+                            }
                             
                             if (ethBurnt > 0) {
                                 records.push({
                                     date: d.UTCDate,
                                     eth_burnt: parseFloat(ethBurnt.toFixed(2)),
                                     avg_gas_price_gwei: parseFloat(gasPrice.toFixed(2)),
+                                    gas_utilization: parseFloat(gasUtilization.toFixed(2)),
                                     transaction_count: 0
                                 });
                             }
@@ -1441,7 +1454,7 @@
                     // Gas price 추정: 2022년 50-100 Gwei → 2025년 10-30 Gwei
                     const daysFromStart = 1095 - i;
                     const progress = daysFromStart / 1095;
-                    let gasPrice, ethBurnt;
+                    let gasPrice, ethBurnt, gasUtilization;
                     
                     if (dailyFee && dailyFee > 0) {
                         // Fee에서 역산
@@ -1456,6 +1469,9 @@
                         ethBurnt = (txCount * 21000 * gasPrice * 0.8) / 1e9;
                     }
                     
+                    // Gas utilization 추정 (gas price 기반)
+                    gasUtilization = Math.min(95, Math.max(45, 50 + gasPrice * 0.5));
+                    
                     // 최소 burnt 보장 (현재 ~150 ETH/day)
                     ethBurnt = Math.max(50, ethBurnt);
                     
@@ -1463,6 +1479,7 @@
                         date: dateStr,
                         eth_burnt: parseFloat(Math.max(0, ethBurnt).toFixed(2)),
                         avg_gas_price_gwei: parseFloat(Math.max(1, gasPrice).toFixed(2)),
+                        gas_utilization: parseFloat(gasUtilization.toFixed(2)),
                         transaction_count: txCount
                     });
                 }
@@ -1938,90 +1955,118 @@
 
             // 19. Daily Issuance - Etherscan ethsupply2 API
             async daily_issuance() {
-                log('  🔍 Fetching Daily Issuance data from Etherscan...', 'info');
-                
-                // Etherscan ethsupply2 API returns Eth2Staking (cumulative staking rewards)
-                // Daily Issuance = delta of Eth2Staking between days
-                
-                if (!ETHERSCAN_API_KEY) {
-                    log('  ❌ Etherscan API key required', 'error');
-                    return 0;
-                }
-                
-                // 현재 Eth2Staking 값 가져오기
-                const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply2&apikey=${ETHERSCAN_API_KEY}`;
-                const data = await fetchJSON(url);
-                
-                if (data?.status !== '1' || !data?.result?.Eth2Staking) {
-                    log('  ❌ Failed to get ethsupply2 data', 'error');
-                    return 0;
-                }
-                
-                const currentEth2Staking = parseFloat(data.result.Eth2Staking) / 1e18; // Wei to ETH
-                const currentEthSupply = parseFloat(data.result.EthSupply) / 1e18;
-                const burntFees = parseFloat(data.result.BurntFees) / 1e18;
-                const withdrawnTotal = parseFloat(data.result.WithdrawnTotal || 0) / 1e18;
-                
-                log(`  📊 Current Eth2Staking: ${currentEth2Staking.toLocaleString()} ETH`, 'info');
-                log(`  📊 Current ETH Supply: ${currentEthSupply.toLocaleString()} ETH`, 'info');
-                log(`  📊 Total Burnt Fees: ${burntFees.toLocaleString()} ETH`, 'info');
+                log('  🔍 Fetching Daily Issuance data...', 'info');
                 
                 // 기존 데이터 확인
                 const { data: existingData } = await supabase.from('historical_daily_issuance')
-                    .select('date, eth2_staking_cumulative, daily_issuance')
+                    .select('date, daily_issuance')
                     .order('date', { ascending: false })
-                    .limit(30);
+                    .limit(1200);
                 
-                const today = new Date().toISOString().split('T')[0];
-                const records = [];
+                const existingDates = new Set(existingData?.filter(d => d.daily_issuance > 0).map(d => d.date) || []);
+                log(`  📋 Existing daily_issuance records: ${existingDates.size}`, 'info');
                 
-                // 이전 데이터가 있으면 차이 계산
-                if (existingData && existingData.length > 0) {
-                    const lastRecord = existingData[0];
-                    const lastDate = lastRecord.date;
-                    const lastEth2Staking = lastRecord.eth2_staking_cumulative || 0;
+                // 데이터가 충분하면 (1000개 이상) 오늘 데이터만 업데이트
+                const hasEnoughData = existingDates.size > 1000;
+                
+                // 현재 Eth2Staking 값 가져오기 (오늘 데이터용)
+                if (ETHERSCAN_API_KEY) {
+                    const url = `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply2&apikey=${ETHERSCAN_API_KEY}`;
+                    const data = await fetchJSON(url);
                     
-                    if (lastDate !== today && lastEth2Staking > 0) {
-                        // 날짜 차이 계산
-                        const daysDiff = Math.max(1, Math.round((new Date(today) - new Date(lastDate)) / 86400000));
-                        const dailyIssuance = (currentEth2Staking - lastEth2Staking) / daysDiff;
+                    if (data?.status === '1' && data?.result?.Eth2Staking) {
+                        const currentEth2Staking = parseFloat(data.result.Eth2Staking) / 1e18;
+                        const burntFees = parseFloat(data.result.BurntFees) / 1e18;
+                        const withdrawnTotal = parseFloat(data.result.WithdrawnTotal || 0) / 1e18;
                         
-                        // 합리적인 범위인지 확인 (500-3500 ETH/day)
-                        if (dailyIssuance > 500 && dailyIssuance < 3500) {
-                            records.push({
-                                date: today,
-                                eth2_staking_cumulative: currentEth2Staking,
-                                daily_issuance: parseFloat(dailyIssuance.toFixed(2)),
-                                burnt_fees_cumulative: burntFees,
-                                withdrawn_total: withdrawnTotal,
-                                source: 'etherscan'
-                            });
-                            log(`  ✅ Daily Issuance: ${dailyIssuance.toFixed(0)} ETH (${daysDiff} day(s) since last record)`, 'success');
-                        } else {
-                            log(`  ⚠️ Calculated issuance out of range: ${dailyIssuance.toFixed(0)} ETH`, 'warn');
+                        const today = new Date().toISOString().split('T')[0];
+                        
+                        // 이전 데이터와 비교해서 daily issuance 계산
+                        if (existingData && existingData.length > 0 && !existingDates.has(today)) {
+                            const lastRecord = existingData[0];
+                            const lastDate = lastRecord.date;
+                            
+                            // 어제 데이터로 cumulative 값 추정
+                            const { data: yesterdayData } = await supabase.from('historical_daily_issuance')
+                                .select('eth2_staking_cumulative')
+                                .eq('date', lastDate)
+                                .single();
+                            
+                            if (yesterdayData?.eth2_staking_cumulative) {
+                                const lastEth2Staking = yesterdayData.eth2_staking_cumulative;
+                                const daysDiff = Math.max(1, Math.round((new Date(today) - new Date(lastDate)) / 86400000));
+                                const dailyIssuance = (currentEth2Staking - lastEth2Staking) / daysDiff;
+                                
+                                if (dailyIssuance > 500 && dailyIssuance < 3500) {
+                                    const { error } = await batchUpsert('historical_daily_issuance', [{
+                                        date: today,
+                                        eth2_staking_cumulative: currentEth2Staking,
+                                        daily_issuance: parseFloat(dailyIssuance.toFixed(2)),
+                                        burnt_fees_cumulative: burntFees,
+                                        withdrawn_total: withdrawnTotal,
+                                        source: 'etherscan'
+                                    }]);
+                                    if (!error) {
+                                        log(`  ✅ Today's Daily Issuance: ${dailyIssuance.toFixed(0)} ETH`, 'success');
+                                    }
+                                }
+                            }
                         }
-                    } else if (lastDate === today) {
-                        log(`  ✅ Today's data already exists`, 'success');
-                        return 0;
+                        
+                        if (hasEnoughData) {
+                            log(`  ✅ Sufficient historical data exists (${existingDates.size} records)`, 'success');
+                            return existingDates.has(today) ? 0 : 1;
+                        }
                     }
-                } else {
-                    // 첫 기록 - 추정값으로 시작
-                    const estimatedDailyIssuance = 1700; // ~1700 ETH/day post-Merge baseline
-                    records.push({
-                        date: today,
-                        eth2_staking_cumulative: currentEth2Staking,
-                        daily_issuance: estimatedDailyIssuance,
-                        burnt_fees_cumulative: burntFees,
-                        withdrawn_total: withdrawnTotal,
-                        source: 'etherscan-initial'
-                    });
-                    log(`  📦 Initial record with baseline: ${estimatedDailyIssuance} ETH/day`, 'info');
                 }
                 
-                if (records.length === 0) {
+                // 백필: staking 데이터로부터 Daily Issuance 계산
+                log('  🔄 Backfilling Daily Issuance from staking data...', 'info');
+                
+                const { data: stakingData } = await supabase.from('historical_staking')
+                    .select('date, total_staked_eth, avg_apr')
+                    .order('date', { ascending: true })
+                    .limit(1200);
+                
+                if (!stakingData || stakingData.length < 10) {
+                    log('  ⚠️ Not enough staking data for backfill', 'warn');
                     return 0;
                 }
                 
+                const records = [];
+                const mergeDate = new Date('2022-09-15');
+                
+                for (const d of stakingData) {
+                    const date = new Date(d.date);
+                    
+                    // Merge 이전은 건너뛰기
+                    if (date < mergeDate) continue;
+                    
+                    // 이미 데이터가 있으면 건너뛰기
+                    if (existingDates.has(d.date)) continue;
+                    
+                    const stakedEth = d.total_staked_eth || 15000000;
+                    const apr = d.avg_apr || 4.0;
+                    
+                    // Daily Issuance = Staked ETH × APR / 365
+                    const dailyIssuance = (stakedEth * (apr / 100)) / 365;
+                    
+                    // 합리적인 범위 확인 (500-3500 ETH/day)
+                    if (dailyIssuance >= 500 && dailyIssuance <= 3500) {
+                        records.push({
+                            date: d.date,
+                            daily_issuance: parseFloat(dailyIssuance.toFixed(2)),
+                            source: 'calculated'
+                        });
+                    }
+                }
+                
+                if (records.length === 0) {
+                    log(`  ✅ All dates already have data or no valid records`, 'success');
+                    return 0;
+                }
+                
+                log(`  📦 Generated ${records.length} records from staking data`, 'info');
                 const { error } = await batchUpsert('historical_daily_issuance', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
