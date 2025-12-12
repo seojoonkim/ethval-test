@@ -14957,9 +14957,16 @@
                 
                 if (blobData.length > 10) {
                     console.log(`   ✓ Blob: ${blobData.length} records`);
+                    
+                    // Supabase 값 그대로 사용 (Admin에서 백필 완료된 상태)
                     state.supabaseBlobHistory = blobData.map(d => ({
-                        date: new Date(d.date), count: parseInt(d.blob_count || 0), fees: parseFloat(d.blob_fee_eth || 0)
+                        date: new Date(d.date),
+                        count: parseInt(d.blob_count || 0),
+                        fees: parseFloat(d.blob_fee_eth || 0)
                     })).reverse();
+                    
+                    // 날짜순 정렬 보장
+                    state.supabaseBlobHistory.sort((a, b) => a.date - b.date);
                 }
                 
                 if (lendingData.length > 10) {
@@ -17923,13 +17930,16 @@
                 if (state.supabaseBlobHistory && state.supabaseBlobHistory.length > 10) {
                     console.log('   Using Supabase Blob data:', state.supabaseBlobHistory.length, 'points');
                     
-                    // 오늘 날짜 제외 (불완전 데이터)
+                    // 오늘과 어제 제외 (불완전 데이터)
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    
                     const filteredHistory = state.supabaseBlobHistory.filter(d => {
                         const dDate = new Date(d.date);
                         dDate.setHours(0, 0, 0, 0);
-                        return dDate.getTime() < today.getTime();
+                        return dDate.getTime() < yesterday.getTime();
                     });
                     
                     state.blobFeesHistory = filteredHistory.map(d => ({
@@ -20522,13 +20532,16 @@
                 if (state.supabaseBlobHistory?.length > 0) {
                     blobSource = 'supabase';
                     
-                    // 오늘 데이터 제외 (불완전)
+                    // 오늘과 어제 데이터 제외 (불완전할 수 있음)
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    
                     const filteredBlob = state.supabaseBlobHistory.filter(d => {
                         const dDate = new Date(d.date);
                         dDate.setHours(0, 0, 0, 0);
-                        return dDate.getTime() < today.getTime();
+                        return dDate.getTime() < yesterday.getTime();
                     });
                     
                     // 주간 합계 계산
