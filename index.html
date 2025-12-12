@@ -14899,13 +14899,23 @@
                 
                 if (gasData.length > 10) {
                     log(`   ✓ Gas: ${gasData.length} records`);
-                    state.supabaseGasHistory = gasData.map(d => ({
-                        date: new Date(d.date), 
-                        gasPrice: parseFloat(d.avg_gas_price_gwei || 0), 
-                        burnt: parseFloat(d.eth_burnt || 0), 
-                        txCount: parseInt(d.transaction_count || 0),
-                        utilization: parseFloat(d.gas_utilization || 0)
-                    })).reverse();
+                    // Exclude today and yesterday (incomplete data causes spikes)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
+                    state.supabaseGasHistory = gasData
+                        .map(d => ({
+                            date: new Date(d.date), 
+                            gasPrice: parseFloat(d.avg_gas_price_gwei || 0), 
+                            burnt: parseFloat(d.eth_burnt || 0), 
+                            txCount: parseInt(d.transaction_count || 0),
+                            utilization: parseFloat(d.gas_utilization || 0)
+                        }))
+                        .filter(d => d.date.getTime() <= twoDaysAgo.getTime())
+                        .reverse();
+                    log(`   ✓ Gas (filtered): ${state.supabaseGasHistory.length} records`);
                 }
                 
                 if (activeData.length > 10) {
@@ -15019,26 +15029,52 @@
                 
                 if (issuanceData.length > 10) {
                     log(`   ✓ Daily Issuance: ${issuanceData.length} records`);
-                    state.supabaseIssuanceHistory = issuanceData.map(d => ({ 
-                        date: new Date(d.date), 
-                        value: parseFloat(d.daily_issuance || 0) 
-                    })).reverse();
+                    // Exclude today and yesterday (incomplete data)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
+                    state.supabaseIssuanceHistory = issuanceData
+                        .map(d => ({ 
+                            date: new Date(d.date), 
+                            value: parseFloat(d.daily_issuance || 0) 
+                        }))
+                        .filter(d => d.date.getTime() <= twoDaysAgo.getTime())
+                        .reverse();
                 }
                 
                 // ETH Mainnet Transactions
                 if (txData.length > 10) {
                     log(`   ✓ ETH Tx: ${txData.length} records`);
-                    state.supabaseTxHistory = txData.map(d => ({ 
-                        date: new Date(d.date), 
-                        value: parseInt(d.tx_count || 0) 
-                    })).reverse();
+                    // Exclude today and yesterday (incomplete data)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
+                    state.supabaseTxHistory = txData
+                        .map(d => ({ 
+                            date: new Date(d.date), 
+                            value: parseInt(d.tx_count || 0) 
+                        }))
+                        .filter(d => d.date.getTime() <= twoDaysAgo.getTime())
+                        .reverse();
                 }
                 
                 // L2 Transactions (aggregate by date)
                 if (l2TxData.length > 10) {
+                    // Exclude today and yesterday (incomplete data)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
                     const l2TxByDate = {};
                     l2TxData.forEach(d => {
                         const dateKey = d.date;
+                        const dDate = new Date(dateKey);
+                        if (dDate.getTime() > twoDaysAgo.getTime()) return; // Skip recent incomplete data
                         if (!l2TxByDate[dateKey]) l2TxByDate[dateKey] = 0;
                         l2TxByDate[dateKey] += parseInt(d.tx_count || 0);
                     });
@@ -18293,9 +18329,19 @@
                 // Build history - use actual gas price data from Supabase
                 state.baseFeeHistory = [];
                 if (state.supabaseGasHistory && state.supabaseGasHistory.length > 0) {
+                    // Exclude today and yesterday (incomplete data)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
                     // Use actual avg_gas_price_gwei from Supabase
                     state.baseFeeHistory = state.supabaseGasHistory
-                        .filter(d => d.gasPrice > 0)
+                        .filter(d => {
+                            const dDate = new Date(d.date);
+                            dDate.setHours(0, 0, 0, 0);
+                            return d.gasPrice > 0 && dDate.getTime() <= twoDaysAgo.getTime();
+                        })
                         .map(d => ({
                             date: d.date,
                             value: d.gasPrice * 0.85  // Base fee is ~85% of gas price
@@ -20598,9 +20644,19 @@
                 // ═══════════════════════════════════════════════════════════════════
                 let baseFeeSource = 'fallback';
                 if (state.supabaseGasHistory?.length > 0) {
+                    // Exclude today and yesterday (incomplete data)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const twoDaysAgo = new Date(today);
+                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                    
                     // Use actual avg_gas_price_gwei from Supabase
                     state.baseFeeHistory = state.supabaseGasHistory
-                        .filter(d => d.gasPrice > 0)
+                        .filter(d => {
+                            const dDate = new Date(d.date);
+                            dDate.setHours(0, 0, 0, 0);
+                            return d.gasPrice > 0 && dDate.getTime() <= twoDaysAgo.getTime();
+                        })
                         .map(d => ({
                             date: d.date,
                             value: d.gasPrice * 0.85  // Base fee is ~85% of gas price
