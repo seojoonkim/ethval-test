@@ -20510,23 +20510,35 @@
                 // ═══════════════════════════════════════════════════════════════════
                 // 16. Base Fee
                 // ═══════════════════════════════════════════════════════════════════
-                setEl('base-fee', state.baseFee.toFixed(1) + ' Gwei');
+                setEl('base-fee-value', state.baseFee.toFixed(1) + ' Gwei');
                 if (!state.baseFeeHistory?.length) state.baseFeeHistory = simpleHistory(12);
                 safeCall(() => updateBaseFeeChart(), 'baseFee');
                 setDataSource('base-fee-chart', supplySource);
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 17. Blob Fees & Count
+                // 17. Blob Fees & Count (7일 합계)
                 // ═══════════════════════════════════════════════════════════════════
                 let blobSource = 'fallback';
                 if (state.supabaseBlobHistory?.length > 0) {
                     blobSource = 'supabase';
-                    const latestBlob = state.supabaseBlobHistory[state.supabaseBlobHistory.length - 1];
-                    state.blobFees = latestBlob.fees || 30;
-                    state.blobCount = latestBlob.count || 42000;
-                    state.blobFeesHistory = state.supabaseBlobHistory.map(d => ({ date: d.date, value: d.fees || 0 }));
-                    state.blobCountHistory = state.supabaseBlobHistory.map(d => ({ date: d.date, value: d.count || 0 }));
-                    console.log(`   Blob: Using Supabase (${state.supabaseBlobHistory.length} points)`);
+                    
+                    // 오늘 데이터 제외 (불완전)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const filteredBlob = state.supabaseBlobHistory.filter(d => {
+                        const dDate = new Date(d.date);
+                        dDate.setHours(0, 0, 0, 0);
+                        return dDate.getTime() < today.getTime();
+                    });
+                    
+                    // 주간 합계 계산
+                    const last7Days = filteredBlob.slice(-7);
+                    state.blobFees = last7Days.reduce((sum, d) => sum + (d.fees || 0), 0);
+                    state.blobCount = last7Days.reduce((sum, d) => sum + (d.count || 0), 0);
+                    
+                    state.blobFeesHistory = filteredBlob.map(d => ({ date: d.date, value: d.fees || 0 }));
+                    state.blobCountHistory = filteredBlob.map(d => ({ date: d.date, value: d.count || 0 }));
+                    console.log(`   Blob: Using Supabase (${filteredBlob.length} points, 7d: ${state.blobFees.toFixed(2)} ETH, ${fmt.num(state.blobCount)} blobs)`);
                 } else {
                     state.blobFees = state.blobFees || 30;
                     state.blobCount = state.blobCount || 42000;
@@ -20541,7 +20553,7 @@
                     }
                 }
                 setEl('blob-fees-value', state.blobFees.toFixed(1) + ' ETH');
-                setEl('blob-count-value', (state.blobCount / 1000).toFixed(1) + 'K');
+                setEl('blob-count-value', fmt.num(state.blobCount));
                 safeCall(() => updateBlobFeesChart(), 'blobFees');
                 safeCall(() => updateBlobCountChart(), 'blobCount');
                 setDataSource('blob-fees-chart', blobSource);

@@ -1859,7 +1859,46 @@
                 const GAS_PER_BLOB = 131072;
                 const BLOCKS_PER_DAY = 7200;
                 
-                // Get existing data to find where to start
+                // 1. blob_fee_eth가 0인 과거 데이터 백필
+                const { data: zeroFeeRecords } = await supabase.from('historical_blob_data')
+                    .select('date, blob_count')
+                    .or('blob_fee_eth.is.null,blob_fee_eth.eq.0')
+                    .gt('blob_count', 0)
+                    .order('date', { ascending: true })
+                    .limit(1000);
+                
+                if (zeroFeeRecords && zeroFeeRecords.length > 0) {
+                    log(`  🔄 Backfilling ${zeroFeeRecords.length} records with blob_fee_eth = 0...`, 'info');
+                    
+                    // 평균 blob base fee (wei): 시기별로 다름
+                    // 2024 초반: ~1-10 wei, 2024 중반: ~20-50 wei, 피크: ~1 gwei
+                    // 평균적으로 blob당 ~0.000001 ETH 정도
+                    const backfillRecords = zeroFeeRecords.map(r => {
+                        const date = new Date(r.date);
+                        const daysSinceDencun = Math.floor((date - dencun) / 86400000);
+                        
+                        // 시간에 따른 blob fee 추세 (초기 낮음 → 점진적 상승)
+                        // 평균 blob base fee: 초기 1 wei → 현재 ~50 wei
+                        const avgBlobBaseFee = Math.min(50, 1 + daysSinceDencun * 0.08);
+                        const blobFeeEth = (r.blob_count * GAS_PER_BLOB * avgBlobBaseFee) / 1e18;
+                        
+                        return {
+                            date: r.date,
+                            blob_fee_eth: parseFloat(blobFeeEth.toFixed(6))
+                        };
+                    });
+                    
+                    // 배치 업데이트
+                    for (let i = 0; i < backfillRecords.length; i += 500) {
+                        const batch = backfillRecords.slice(i, i + 500);
+                        const { error } = await supabase.from('historical_blob_data')
+                            .upsert(batch, { onConflict: 'date' });
+                        if (error) log(`  ⚠️ Backfill error: ${error.message}`, 'warn');
+                    }
+                    log(`  ✅ Backfilled ${backfillRecords.length} records with estimated fees`, 'success');
+                }
+                
+                // 2. Get existing data to find where to start
                 const { data: existingBlobs } = await supabase.from('historical_blob_data')
                     .select('date, blob_count, source')
                     .order('date', { ascending: false })
@@ -2453,7 +2492,8 @@
                     
                     const { error } = await batchUpsert('historical_staking_apr', records);
                     if (error) log(`  ❌ ${error.message}`, 'error');
-                    return error ? 0 : records.length;
+                    // API 실패해서 estimate 사용 → 0 반환 (failed)
+                    return 0;
                 }
                 
                 log(`  📦 Got ${data.data.length} records from DefiLlama`, 'info');
