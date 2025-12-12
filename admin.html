@@ -1740,7 +1740,7 @@
                 let todayBlobData = null;
                 
                 try {
-                    const apiKey = document.getElementById('etherscan-api').value || 'YourApiKeyToken';
+                    const apiKey = ETHERSCAN_API_KEY || 'YourApiKeyToken';
                     
                     // Fetch last 1024 blocks
                     const response = await fetch(
