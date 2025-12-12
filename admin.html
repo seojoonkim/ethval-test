@@ -2448,14 +2448,14 @@
                     return 0;
                 }
                 
-                // L2 체인들 필터 (ethereum 제외)
-                const l2Chains = ['arbitrum', 'optimism', 'base', 'zksync_era', 'linea', 'scroll', 'blast', 'manta', 'mode', 'zora', 'polygon_zkevm', 'starknet'];
+                // 모든 L2 체인 수집 (ethereum L1만 제외)
+                const excludeChains = ['ethereum'];
                 
                 const l2Records = data
-                    .filter(d => l2Chains.includes(d.origin_key) && d.metric_key === 'txcount' && d.value > 0)
+                    .filter(d => !excludeChains.includes(d.origin_key) && d.metric_key === 'txcount' && d.value > 0)
                     .map(d => ({
                         date: d.date,
-                        chain: d.origin_key,
+                        chain: d.origin_key.toLowerCase(),  // 소문자로 통일
                         tx_count: Math.floor(d.value),
                         source: 'growthepie'
                     }));
