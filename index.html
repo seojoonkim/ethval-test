@@ -969,29 +969,23 @@
         .data-source-badge.live { background: #dbeafe; color: #1e40af; }
         .data-source-badge.fallback { background: #fef3c7; color: #92400e; }
         
-        /* 메인 가격 차트 하단 정보 줄 */
+        /* 메인 가격 차트 하단 정보 줄 - 미니차트와 동일 스타일 */
         .price-chart-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 12px;
-            border-top: 1px solid #e5e7eb;
-            font-size: 11px;
-            color: #6b7280;
-            background: #fafafa;
-            border-radius: 0 0 12px 12px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            font-size: 9px;
         }
-        .price-chart-stats {
-            display: flex;
-            gap: 16px;
+        .price-chart-footer .change {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+            color: var(--text-muted);
         }
-        .price-chart-stats .stat-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .price-chart-stats .up { color: #16a34a; font-weight: 600; }
-        .price-chart-stats .down { color: #dc2626; font-weight: 600; }
+        .price-chart-footer .change.up { color: var(--green); }
+        .price-chart-footer .change.down { color: var(--red); }
         
         .price-chart-source {
             font-size: 9px;
@@ -8998,9 +8992,7 @@
                     </div>
                     <div class="price-chart-footer">
                         <span class="price-chart-source" id="price-chart-source"></span>
-                        <span class="price-chart-stats">
-                            <span class="stat-item" id="price-change-stat"><span id="price-change-label">3Y</span>: <span id="price-change-value">--</span></span>
-                        </span>
+                        <span class="change" id="price-change-stat">--</span>
                     </div>
                 </div>
             </div>
@@ -16977,17 +16969,14 @@
                     pastPrice = sortedHistory[0];
                 }
                 
-                const labelEl = document.getElementById('price-change-label');
-                const valueEl = document.getElementById('price-change-value');
+                const changeEl = document.getElementById('price-change-stat');
                 
-                if (labelEl) labelEl.textContent = periodLabel;
-                
-                if (pastPrice && valueEl) {
+                if (pastPrice && changeEl) {
                     const change = ((currentPrice - pastPrice.value) / pastPrice.value) * 100;
-                    valueEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
-                    valueEl.className = change >= 0 ? 'up' : 'down';
-                } else if (valueEl) {
-                    valueEl.textContent = '--';
+                    changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '% ' + periodLabel;
+                    changeEl.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                } else if (changeEl) {
+                    changeEl.textContent = '--';
                 }
             } catch (e) {
                 console.log('Price change calculation error:', e);
@@ -20151,6 +20140,32 @@
                 const setEl = (id, text) => { try { const el = document.getElementById(id); if (el) el.textContent = text; } catch(e){} };
                 const safeCall = (fn, name) => { try { fn(); } catch(e) { console.error(name + ' error:', e); } };
                 
+                // 증감률 계산 헬퍼 함수
+                const setChange = (elementId, history, options = {}) => {
+                    try {
+                        const el = document.getElementById(elementId);
+                        if (!el || !history || history.length < 2) return;
+                        
+                        const first = history[0].value;
+                        const last = history[history.length - 1].value;
+                        if (first === 0 || first === null || first === undefined) return;
+                        
+                        const change = ((last - first) / first) * 100;
+                        const label = options.label || '3Y';
+                        const suffix = options.suffix || '';
+                        const isPercentagePoint = options.pp || false;
+                        
+                        if (isPercentagePoint) {
+                            const ppChange = last - first;
+                            el.textContent = (ppChange >= 0 ? '+' : '') + ppChange.toFixed(2) + 'pp ' + label;
+                            el.className = 'change ' + (ppChange >= 0 ? 'up' : 'down');
+                        } else {
+                            el.textContent = fmt.pct(change) + ' ' + label + suffix;
+                            el.className = 'change ' + (change >= 0 ? 'up' : 'down');
+                        }
+                    } catch (e) { console.error('setChange error for ' + elementId, e); }
+                };
+                
                 // 90일 시뮬레이션 (fallback용)
                 const simpleHistory = (val, days = 365) => {
                     const h = [];
@@ -20205,6 +20220,7 @@
                 setEl('tvl-value', '$' + (state.tvl / 1e9).toFixed(2) + 'B');
                 safeCall(() => updateMetricChart('tvl-chart', tvlChart, state.tvlHistory, '#10b981', 'tvl'), 'tvl');
                 setDataSource('tvl-chart', tvlSource, 'DefiLlama');
+                setChange('tvl-change', state.tvlHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 3. Staking
@@ -20221,6 +20237,7 @@
                 setEl('staked-value', (state.stakedEth / 1e6).toFixed(2) + 'M ETH');
                 safeCall(() => updateMetricChart('staking-chart', stakingChart, state.stakingHistory, '#6366f1', 'staking'), 'staking');
                 setDataSource('staking-chart', stakingSource, 'Beaconcha.in');
+                setChange('staking-change', state.stakingHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 4. L2 TVL
@@ -20237,6 +20254,7 @@
                 setEl('l2-value', '$' + (state.l2Tvl / 1e9).toFixed(2) + 'B');
                 safeCall(() => updateMetricChart('l2-chart', l2Chart, state.l2History, '#a855f7', 'l2'), 'l2');
                 setDataSource('l2-chart', l2Source, 'L2Beat');
+                setChange('l2-change', state.l2History);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 5. Fees (주간)
@@ -20275,6 +20293,7 @@
                 setEl('dex-value', '$' + ((state.dexVolume * 7) / 1e9).toFixed(1) + 'B');
                 safeCall(() => updateMetricChart('dex-chart', dexChart, state.dexHistory, '#06b6d4', 'dex'), 'dex');
                 setDataSource('dex-chart', dexSource, 'DefiLlama');
+                setChange('dex-change', state.dexHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 7. Stablecoins on ETH (이더리움 체인만)
@@ -20292,6 +20311,7 @@
                 setEl('stables-value', '$' + (state.stablecoins / 1e9).toFixed(1) + 'B');
                 safeCall(() => updateMetricChart('stables-chart', stablesChart, state.stablesHistory, '#eab308', 'stables'), 'stables');
                 setDataSource('stables-chart', stablesSource, 'DefiLlama');
+                setChange('stables-change', state.stablesHistory);
                 
                 // App Capital = Stablecoins ÷ 0.28
                 const STABLECOIN_RATIO_RENDER = 0.28;
@@ -20300,6 +20320,7 @@
                 setEl('app-capital-value', '$' + (state.appCapital / 1e9).toFixed(0) + 'B');
                 safeCall(() => updateMetricChart('app-capital-chart', appCapitalChart, state.appCapitalHistory, '#ec4899', 'appCapital'), 'appCapital');
                 setDataSource('app-capital-chart', stablesSource, 'DefiLlama');
+                setChange('app-capital-change', state.appCapitalHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 8. Lending TVL
@@ -20316,6 +20337,7 @@
                 setEl('lending-tvl', '$' + (state.lendingTvl / 1e9).toFixed(2) + 'B');
                 safeCall(() => updateLendingChart(), 'lending');
                 setDataSource('lending-chart', lendingSource, 'DefiLlama');
+                setChange('lending-change', state.lendingHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 9. Exchange Reserve
@@ -20332,6 +20354,7 @@
                 setEl('exchange-reserve', (state.exchangeReserve / 1e6).toFixed(2) + 'M ETH');
                 safeCall(() => updateMetricChart('reserve-chart', reserveChart, state.reserveHistory, '#f59e0b', 'reserve'), 'reserve');
                 setDataSource('reserve-chart', reserveSource, 'CryptoQuant');
+                setChange('reserve-change', state.reserveHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 10. Fear & Greed
@@ -20643,6 +20666,8 @@
                 safeCall(() => updateMetricChart('tx-total-chart', txTotalChart, state.txTotalHistory, '#8b5cf6', 'txTotal'), 'txTotal');
                 setDataSource('tx-eth-chart', txSource);
                 setDataSource('tx-total-chart', txSource);
+                setChange('tx-eth-change', state.txEthHistory);
+                setChange('tx-total-change', state.txTotalHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 19. Stablecoin Total Market (All Chains)
@@ -20667,6 +20692,7 @@
                 setEl('stablecoin-mcap', '$' + ((state.stablecoinMcap || 200e9) / 1e9).toFixed(1) + 'B');
                 safeCall(() => updateStablecoinChart(), 'stablecoin');
                 setDataSource('stablecoin-chart', stablecoinSource, 'DefiLlama');
+                setChange('stablecoin-change', state.stablecoinHistory);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 20. Staking Yield - Supabase Staking 데이터 사용
@@ -20809,6 +20835,9 @@
                 
                 // 실시간 가격만 항상 가져오기 (현재가 업데이트용)
                 await fetchBinancePrice();
+                
+                // CoinGecko에서 ATH, Market Cap 등 기본 정보 가져오기
+                await fetchCoinGecko();
                 
                 // 필요한 API만 조건부 호출
                 const apiCalls = [];
