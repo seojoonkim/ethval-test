@@ -103,12 +103,12 @@
                 <button class="btn btn-sm btn-primary" onclick="autoFillNewData()">🔄 Auto-fill New Data</button>
             </div>
             <div style="padding: 20px;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px;">
                     <!-- Daily ETH Burnt -->
                     <div class="csv-upload-box" id="dropBurn" ondrop="handleDrop(event, 'burn')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                         <div class="csv-icon">🔥</div>
                         <div class="csv-title">Daily ETH Burnt</div>
-                        <div class="csv-desc">etherscan.io/chart/dailyethburnt</div>
+                        <a href="https://etherscan.io/chart/dailyethburnt" target="_blank" class="csv-link">📥 Download CSV</a>
                         <input type="file" id="fileBurn" accept=".csv" onchange="handleFile(event, 'burn')" style="display:none">
                         <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileBurn').click()">Select CSV</button>
                         <div class="csv-status" id="statusBurn">No file</div>
@@ -117,7 +117,7 @@
                     <div class="csv-upload-box" id="dropTx" ondrop="handleDrop(event, 'tx')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                         <div class="csv-icon">📝</div>
                         <div class="csv-title">Daily Transactions</div>
-                        <div class="csv-desc">etherscan.io/chart/tx</div>
+                        <a href="https://etherscan.io/chart/tx" target="_blank" class="csv-link">📥 Download CSV</a>
                         <input type="file" id="fileTx" accept=".csv" onchange="handleFile(event, 'tx')" style="display:none">
                         <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileTx').click()">Select CSV</button>
                         <div class="csv-status" id="statusTx">No file</div>
@@ -126,10 +126,19 @@
                     <div class="csv-upload-box" id="dropGas" ondrop="handleDrop(event, 'gas')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                         <div class="csv-icon">⛽</div>
                         <div class="csv-title">Avg Gas Price</div>
-                        <div class="csv-desc">etherscan.io/chart/gasprice</div>
+                        <a href="https://etherscan.io/chart/gasprice" target="_blank" class="csv-link">📥 Download CSV</a>
                         <input type="file" id="fileGas" accept=".csv" onchange="handleFile(event, 'gas')" style="display:none">
                         <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileGas').click()">Select CSV</button>
                         <div class="csv-status" id="statusGas">No file</div>
+                    </div>
+                    <!-- Supply Growth (Issuance) -->
+                    <div class="csv-upload-box" id="dropIssuance" ondrop="handleDrop(event, 'issuance')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">💎</div>
+                        <div class="csv-title">Supply Growth</div>
+                        <a href="https://etherscan.io/chart/ethersupplygrowth" target="_blank" class="csv-link">📥 Download CSV</a>
+                        <input type="file" id="fileIssuance" accept=".csv" onchange="handleFile(event, 'issuance')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileIssuance').click()">Select CSV</button>
+                        <div class="csv-status" id="statusIssuance">No file</div>
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -163,6 +172,8 @@
             .csv-icon { font-size: 32px; margin-bottom: 8px; }
             .csv-title { font-weight: 600; margin-bottom: 4px; }
             .csv-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+            .csv-link { display: block; font-size: 11px; color: var(--primary); text-decoration: none; margin-bottom: 10px; }
+            .csv-link:hover { text-decoration: underline; }
             .csv-status { margin-top: 10px; font-size: 11px; color: var(--text-muted); }
             .csv-status.success { color: var(--success); }
             .csv-status.error { color: var(--error); }
@@ -220,7 +231,7 @@
         let supabase;
         
         // CSV Data Storage
-        const csvData = { burn: null, tx: null, gas: null };
+        const csvData = { burn: null, tx: null, gas: null, issuance: null };
 
         // ═══════════════════════════════════════════════════════════════════
         // CSV UPLOAD & PARSING
@@ -254,51 +265,39 @@
                     const lines = text.trim().split('\n');
                     const records = [];
                     
-                    console.log(`[${type}] First 3 lines:`, lines.slice(0, 3));
+                    // Get header to understand column structure
+                    const headerLine = lines[0];
+                    console.log(`[${type}] Header:`, headerLine);
+                    console.log(`[${type}] First data lines:`, lines.slice(1, 3));
+                    
+                    // Parse header
+                    const headers = parseCSVLine(headerLine);
+                    console.log(`[${type}] Parsed headers:`, headers);
                     
                     // Skip header, parse data
                     for (let i = 1; i < lines.length; i++) {
                         const line = lines[i].trim();
                         if (!line) continue;
                         
-                        // Handle CSV with quoted fields containing commas
-                        let parts;
+                        const parts = parseCSVLine(line);
+                        if (parts.length < 2) continue;
                         
-                        // Check if line has quoted fields
-                        if (line.includes('"')) {
-                            // Parse quoted CSV properly
-                            parts = [];
-                            let current = '';
-                            let inQuotes = false;
+                        const dateStr = parts[0];
+                        let timestamp, value;
+                        
+                        // Handle different CSV formats
+                        if (type === 'issuance') {
+                            // Supply Growth CSV: Date, UnixTimeStamp, TotalSupply
+                            // We need to calculate daily change (issuance - burn = net change)
+                            // Store raw total supply, we'll calculate daily issuance after parsing all records
+                            timestamp = parseInt(parts[1].replace(/,/g, ''));
+                            value = parseFloat(parts[2].replace(/,/g, ''));
                             
-                            for (let c of line) {
-                                if (c === '"') {
-                                    inQuotes = !inQuotes;
-                                } else if (c === ',' && !inQuotes) {
-                                    parts.push(current.trim());
-                                    current = '';
-                                } else {
-                                    current += c;
-                                }
-                            }
-                            parts.push(current.trim());
-                        } else {
-                            parts = line.split(',');
-                        }
-                        
-                        // Support both 2-column (Date, Value) and 3-column (Date, Timestamp, Value) formats
-                        if (parts.length < 2) {
-                            console.log(`[${type}] Skipping line ${i}: not enough parts`, parts);
-                            continue;
-                        }
-                        
-                        const dateStr = parts[0].replace(/"/g, '');
-                        let timestamp, valueStr;
-                        
-                        if (parts.length === 2) {
+                        } else if (parts.length === 2) {
                             // 2-column format: Date, Value (no timestamp)
-                            valueStr = parts[1].replace(/"/g, '').replace(/,/g, '');
-                            // Generate timestamp from date
+                            const valueStr = parts[1].replace(/,/g, '');
+                            value = parseFloat(valueStr);
+                            
                             let dateObj;
                             if (dateStr.includes('/')) {
                                 const [m, d, y] = dateStr.split('/');
@@ -309,21 +308,18 @@
                             timestamp = Math.floor(dateObj.getTime() / 1000);
                         } else {
                             // 3-column format: Date, Timestamp, Value
-                            timestamp = parseInt(parts[1].replace(/"/g, ''));
-                            valueStr = parts[2].replace(/"/g, '').replace(/,/g, '');
+                            timestamp = parseInt(parts[1].replace(/,/g, ''));
+                            const valueStr = parts[2].replace(/,/g, '');
+                            value = parseFloat(valueStr);
                         }
                         
-                        const value = parseFloat(valueStr);
-                        
                         if (isNaN(value)) {
-                            console.log(`[${type}] Skipping line ${i}: invalid value`, valueStr);
                             continue;
                         }
                         
                         // Convert date format to ISO
                         let isoDate;
                         if (dateStr.includes('/')) {
-                            // MM/DD/YYYY format
                             const [m, d, y] = dateStr.split('/');
                             isoDate = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
                         } else {
@@ -335,8 +331,9 @@
                     
                     csvData[type] = records;
                     
-                    const statusEl = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
-                    const boxEl = document.getElementById(`drop${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', issuance: 'Issuance' };
+                    const statusEl = document.getElementById(`status${typeMap[type]}`);
+                    const boxEl = document.getElementById(`drop${typeMap[type]}`);
                     
                     statusEl.textContent = `✓ ${records.length} records loaded`;
                     statusEl.className = 'csv-status success';
@@ -347,7 +344,8 @@
                     
                 } catch (err) {
                     console.error(`[${type}] Parse error:`, err);
-                    const statusEl = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', issuance: 'Issuance' };
+                    const statusEl = document.getElementById(`status${typeMap[type]}`);
                     statusEl.textContent = `✗ Parse error: ${err.message}`;
                     statusEl.className = 'csv-status error';
                     log(`❌ ${type.toUpperCase()}: CSV parse error - ${err.message}`, 'error');
@@ -356,11 +354,31 @@
             reader.readAsText(file);
         }
         
+        // Helper function to parse CSV line with proper quote handling
+        function parseCSVLine(line) {
+            const parts = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let c of line) {
+                if (c === '"') {
+                    inQuotes = !inQuotes;
+                } else if (c === ',' && !inQuotes) {
+                    parts.push(current.trim());
+                    current = '';
+                } else {
+                    current += c;
+                }
+            }
+            parts.push(current.trim());
+            return parts;
+        }
+        
         function updateImportButton() {
             const btn = document.getElementById('importBtn');
             const loaded = Object.values(csvData).filter(v => v !== null).length;
             btn.disabled = loaded === 0;
-            btn.textContent = `📥 Import ${loaded}/3 Files to Supabase`;
+            btn.textContent = `📥 Import ${loaded}/4 Files to Supabase`;
         }
         
         async function importAllCSV() {
@@ -459,6 +477,48 @@
                             }
                         }
                     }
+                }
+                
+                // Import Issuance (Daily ETH minted) - calculated from Total Supply changes
+                if (csvData.issuance) {
+                    progressEl.textContent = 'Importing Issuance data...';
+                    
+                    // Sort by date ascending
+                    const sorted = [...csvData.issuance].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    // Calculate daily issuance from supply changes
+                    // Note: Positive change = issuance > burn (inflationary)
+                    //       Negative change = burn > issuance (deflationary)
+                    const issuanceRecords = [];
+                    for (let i = 1; i < sorted.length; i++) {
+                        const prevSupply = sorted[i-1].value;
+                        const currSupply = sorted[i].value;
+                        const dailyChange = currSupply - prevSupply; // Can be negative (deflationary)
+                        
+                        issuanceRecords.push({
+                            date: sorted[i].date,
+                            eth_supply: currSupply,
+                            daily_issuance: parseFloat(dailyChange.toFixed(4))
+                        });
+                    }
+                    
+                    log(`📦 Issuance: Calculated ${issuanceRecords.length} daily records from supply changes`, 'info');
+                    
+                    // Save to historical_eth_supply table
+                    const supplyRecords = issuanceRecords.map(r => ({
+                        date: r.date,
+                        eth_supply: r.eth_supply,
+                        eth2_staking: r.daily_issuance // Store daily net issuance here
+                    }));
+                    
+                    const { error: issuanceError } = await batchUpsert('historical_eth_supply', supplyRecords);
+                    if (issuanceError) {
+                        log(`⚠️ Issuance save error: ${issuanceError.message}`, 'warn');
+                    } else {
+                        log(`✅ Issuance: Imported ${issuanceRecords.length} records`, 'success');
+                    }
+                    
+                    totalImported += issuanceRecords.length;
                 }
                 
                 progressEl.textContent = `✓ Done! Imported ${totalImported} total records`;
@@ -636,11 +696,90 @@
                     else log(`✅ Saved ${txRecords.length} transaction records`, 'success');
                 }
                 
+                // 5. Auto-calculate issuance for missing dates
+                await autoFillIssuance(missingDates);
+                
                 log(`🎉 Auto-fill complete! Filled ${gasRecords.length} days`, 'success');
                 await refreshData();
                 
             } catch (err) {
                 log(`❌ Auto-fill error: ${err.message}`, 'error');
+            }
+        }
+        
+        // Calculate daily issuance from staking data
+        async function autoFillIssuance(dates) {
+            if (!dates || dates.length === 0) return;
+            
+            try {
+                log('💎 Calculating daily issuance...', 'info');
+                
+                // Get current validator count from beaconcha.in (free API)
+                let validatorCount = 1050000; // Default fallback
+                let stakingAPR = 0.032; // Default 3.2%
+                
+                try {
+                    const beaconRes = await fetch('https://beaconcha.in/api/v1/epoch/latest');
+                    const beaconData = await beaconRes.json();
+                    if (beaconData.status === 'OK' && beaconData.data) {
+                        validatorCount = beaconData.data.validatorscount || validatorCount;
+                        log(`   📊 Active validators: ${validatorCount.toLocaleString()}`, 'info');
+                    }
+                } catch (e) {
+                    log(`   ⚠️ Could not fetch validator count, using estimate`, 'warn');
+                }
+                
+                // Calculate staked ETH and daily issuance
+                // Formula: daily_issuance = (total_staked * APR) / 365
+                // APR decreases as more ETH is staked (inverse square root)
+                const totalStaked = validatorCount * 32;
+                
+                // Dynamic APR based on staked amount (rough approximation)
+                // Base reward factor: 64
+                // APR ≈ 64 * 32 * 31556952 / (sqrt(total_staked) * 10^9) * 100%
+                const baseRewardFactor = 64;
+                const secondsPerYear = 31556952;
+                stakingAPR = (baseRewardFactor * 32 * secondsPerYear) / (Math.sqrt(totalStaked * 1e9) * 1e9);
+                stakingAPR = Math.max(0.02, Math.min(stakingAPR, 0.06)); // Clamp between 2-6%
+                
+                const dailyIssuance = (totalStaked * stakingAPR) / 365;
+                
+                log(`   💰 Staked: ${(totalStaked/1e6).toFixed(2)}M ETH, APR: ${(stakingAPR*100).toFixed(2)}%, Daily: ~${dailyIssuance.toFixed(0)} ETH`, 'info');
+                
+                // Prepare issuance records
+                const issuanceRecords = dates.map(date => ({
+                    date: date.toISOString().split('T')[0],
+                    daily_issuance: parseFloat(dailyIssuance.toFixed(2))
+                }));
+                
+                // Save to eth_supply table (using eth2_staking column for daily issuance)
+                const { data: existingSupply } = await supabase.from('historical_eth_supply')
+                    .select('date, eth_supply, burnt_fees')
+                    .order('date', { ascending: false })
+                    .limit(1);
+                
+                const baseSupply = existingSupply?.[0]?.eth_supply || 120500000;
+                
+                const supplyUpdates = dates.map((date, i) => {
+                    const dateStr = date.toISOString().split('T')[0];
+                    return {
+                        date: dateStr,
+                        eth_supply: baseSupply, // Approximate
+                        eth2_staking: parseFloat(dailyIssuance.toFixed(2)) // Daily issuance stored here
+                    };
+                });
+                
+                if (supplyUpdates.length > 0) {
+                    const { error } = await batchUpsert('historical_eth_supply', supplyUpdates);
+                    if (error) {
+                        log(`   ⚠️ Issuance save error: ${error.message}`, 'warn');
+                    } else {
+                        log(`   ✅ Saved ${supplyUpdates.length} issuance records`, 'success');
+                    }
+                }
+                
+            } catch (err) {
+                log(`   ⚠️ Issuance calculation error: ${err.message}`, 'warn');
             }
         }
 
@@ -1984,6 +2123,11 @@
                 await new Promise(r => setTimeout(r, 300));
             }
             log(`\n📊 Done: ${ok} success, ${fail} failed`, ok > fail ? 'success' : 'warn');
+            
+            // Auto-fill missing data from block calculations
+            log('\n━━━ Auto-fill Missing Data ━━━', 'info');
+            await autoFillNewData();
+            
             await loadDataStatus();
         }
 
@@ -2233,11 +2377,34 @@
                 document.getElementById('connText').textContent = 'Connected';
                 log('✅ Supabase connected', 'success');
                 await loadDataStatus();
+                
+                // Auto-collect if more than 12 hours since last collection
+                await checkAutoCollect();
             } catch (e) {
                 document.getElementById('connStatus').className = 'connection-status disconnected';
                 document.getElementById('connText').textContent = 'Error';
                 log('❌ Init error: ' + e.message, 'error');
                 console.error('Init error:', e);
+            }
+        }
+        
+        // Check if auto-collection is needed (every 12 hours)
+        async function checkAutoCollect() {
+            const lastCollect = localStorage.getItem('ethval_last_collect');
+            const now = Date.now();
+            const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+            
+            if (!lastCollect || (now - parseInt(lastCollect)) > TWELVE_HOURS) {
+                log('\n⏰ Auto-collection triggered (>12h since last run)', 'info');
+                localStorage.setItem('ethval_last_collect', now.toString());
+                
+                // Run collection after a short delay
+                setTimeout(async () => {
+                    await collectAll();
+                }, 2000);
+            } else {
+                const hoursAgo = ((now - parseInt(lastCollect)) / (60 * 60 * 1000)).toFixed(1);
+                log(`⏰ Last collection: ${hoursAgo}h ago (auto-collect in ${(12 - hoursAgo).toFixed(1)}h)`, 'info');
             }
         }
         
