@@ -1720,6 +1720,7 @@
                 
                 const dencun = new Date('2024-03-13');
                 const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
                 const records = [];
                 
                 // Constants
@@ -1734,9 +1735,9 @@
                     .limit(7);
                 
                 const lastDate = existingBlobs?.[0]?.date ? new Date(existingBlobs[0].date) : dencun;
+                const lastDateStr = lastDate.toISOString().split('T')[0];
                 
-                // Try eth_feeHistory API for recent data
-                let apiSuccess = false;
+                // Try eth_feeHistory API for today's data
                 let todayBlobData = null;
                 
                 try {
@@ -1748,10 +1749,15 @@
                     );
                     const data = await response.json();
                     
-                    if (data && data.result && data.result.blobGasUsedRatio) {
+                    // Debug: log response structure
+                    log(`  📡 API response: ${data?.result ? 'has result' : 'no result'}, keys: ${data?.result ? Object.keys(data.result).join(', ') : 'N/A'}`, 'info');
+                    
+                    if (data && data.result) {
                         const result = data.result;
                         const blobGasUsedRatios = result.blobGasUsedRatio || [];
                         const baseFeePerBlobGas = result.baseFeePerBlobGas || [];
+                        
+                        log(`  📊 blobGasUsedRatio: ${blobGasUsedRatios.length} items, baseFeePerBlobGas: ${baseFeePerBlobGas.length} items`, 'info');
                         
                         if (blobGasUsedRatios.length > 0) {
                             let totalBlobGasUsed = 0;
@@ -1775,7 +1781,7 @@
                             const dailyBlobFees = totalBlobFees * scaleFactor;
                             
                             todayBlobData = {
-                                date: today.toISOString().split('T')[0],
+                                date: todayStr,
                                 timestamp: today.getTime(),
                                 blob_count: dailyBlobCount,
                                 blob_gas_used: dailyBlobGas,
@@ -1783,31 +1789,34 @@
                                 source: 'eth_feeHistory'
                             };
                             
-                            apiSuccess = true;
-                            log(`  ✅ eth_feeHistory: ${blobGasUsedRatios.length} blocks sampled → ${dailyBlobCount.toLocaleString()} blobs/day`, 'success');
+                            log(`  ✅ eth_feeHistory: ${blobGasUsedRatios.length} blocks → ${dailyBlobCount.toLocaleString()} blobs/day, ${dailyBlobFees.toFixed(4)} ETH fees`, 'success');
+                        } else {
+                            log(`  ⚠️ No blob data in API response`, 'warn');
                         }
+                    } else {
+                        log(`  ⚠️ Invalid API response: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
                     }
                 } catch (e) {
                     log(`  ⚠️ eth_feeHistory API failed: ${e.message}`, 'warn');
                 }
                 
-                // Generate records for missing days
+                // Generate records for missing days (between lastDate and yesterday)
                 let cur = new Date(lastDate);
-                cur.setDate(cur.getDate() + 1); // Start from next day
+                cur.setDate(cur.getDate() + 1);
                 
-                while (cur < today) {
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                while (cur <= yesterday) {
                     const days = Math.floor((cur - dencun) / 86400000);
                     
-                    // Estimation for past days (when API doesn't cover)
-                    // Calibrated to real data: ~21K blobs/day in Nov-Dec 2024
+                    // Estimation for past days
                     const baseCount = 12000 + Math.min(days * 35, 12000);
                     const dayOfWeek = cur.getDay();
                     const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 0.85 : 1.0;
                     const variation = 0.85 + Math.random() * 0.3;
                     
                     const blobCount = Math.round(baseCount * weekendFactor * variation);
-                    
-                    // Blob fee: usually very low, occasional spikes
                     const blobFeeGwei = Math.random() < 0.1 ? Math.random() * 50 : Math.random() * 0.5;
                     const dailyBlobFeeEth = (blobCount * blobFeeGwei * GAS_PER_BLOB) / 1e9;
                     
@@ -1822,29 +1831,30 @@
                     cur.setDate(cur.getDate() + 1);
                 }
                 
-                // Add today's data from API if available
+                // Always add/update today's data from API if available
                 if (todayBlobData) {
                     records.push(todayBlobData);
                 }
                 
                 if (records.length === 0) {
-                    log('  ✅ Blob data already up to date', 'success');
-                    return 0;
+                    log('  ✅ Blob data already up to date (no new records needed)', 'success');
+                    return 1; // Return 1 to indicate success, not 0
                 }
                 
                 const { error } = await batchUpsert('historical_blob_data', records);
                 if (error) {
                     log(`  ❌ ${error.message}`, 'error');
-                } else {
-                    const apiRecords = records.filter(r => r.source === 'eth_feeHistory').length;
-                    const estRecords = records.filter(r => r.source === 'estimated').length;
-                    if (apiRecords > 0) {
-                        log(`  ✅ Blob data: ${apiRecords} API + ${estRecords} estimated records`, 'success');
-                    } else {
-                        log(`  ⚠️ Blob data: ${estRecords} estimated records`, 'warn');
-                    }
+                    return 0;
                 }
-                return error ? 0 : records.length;
+                
+                const apiRecords = records.filter(r => r.source === 'eth_feeHistory').length;
+                const estRecords = records.filter(r => r.source === 'estimated').length;
+                if (apiRecords > 0) {
+                    log(`  ✅ Blob data: ${apiRecords} API + ${estRecords} estimated records saved`, 'success');
+                } else {
+                    log(`  ⚠️ Blob data: ${estRecords} estimated records (API unavailable)`, 'warn');
+                }
+                return records.length;
             },
 
             // 18. Lending TVL - HAS source
