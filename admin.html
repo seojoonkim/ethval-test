@@ -158,6 +158,15 @@
                         <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileBlob').click()">Select CSV</button>
                         <div class="csv-status" id="statusBlob">No file</div>
                     </div>
+                    <!-- Gas Utilization -->
+                    <div class="csv-upload-box" id="dropGasUtil" ondrop="handleDrop(event, 'gasUtil')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">📊</div>
+                        <div class="csv-title">Gas Utilization</div>
+                        <a href="https://etherscan.io/chart/networkutilization" target="_blank" class="csv-link">📥 Download CSV</a>
+                        <input type="file" id="fileGasUtil" accept=".csv" onchange="handleFile(event, 'gasUtil')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileGasUtil').click()">Select CSV</button>
+                        <div class="csv-status" id="statusGasUtil">No file</div>
+                    </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                     <button class="btn btn-success" id="importBtn" onclick="importAllCSV()" disabled>📥 Import All to Supabase</button>
@@ -249,7 +258,7 @@
         let supabase;
         
         // CSV Data Storage
-        const csvData = { burn: null, tx: null, gas: null, supply: null, dailyIssuance: null, blob: null };
+        const csvData = { burn: null, tx: null, gas: null, supply: null, dailyIssuance: null, blob: null, gasUtil: null };
 
         // ═══════════════════════════════════════════════════════════════════
         // CSV UPLOAD & PARSING
@@ -359,6 +368,27 @@
                             });
                             continue;
                             
+                        } else if (type === 'gasUtil') {
+                            // Etherscan Network Utilization CSV: Date, UnixTimeStamp, Value (decimal 0.xx)
+                            timestamp = parseInt(parts[1].replace(/,/g, ''));
+                            value = parseFloat(parts[2].replace(/,/g, '')) * 100; // Convert 0.xx to percentage
+                            
+                            // Convert date format to ISO
+                            let isoDate;
+                            if (dateStr.includes('/')) {
+                                const [m, d, y] = dateStr.split('/');
+                                isoDate = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+                            } else {
+                                isoDate = dateStr;
+                            }
+                            
+                            records.push({ 
+                                date: isoDate, 
+                                timestamp, 
+                                gas_utilization: parseFloat(value.toFixed(2))
+                            });
+                            continue;
+                            
                         } else if (parts.length === 2) {
                             // 2-column format: Date, Value (no timestamp)
                             const valueStr = parts[1].replace(/,/g, '');
@@ -397,7 +427,7 @@
                     
                     csvData[type] = records;
                     
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob', gasUtil: 'GasUtil' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     const boxEl = document.getElementById(`drop${typeMap[type]}`);
                     
@@ -410,7 +440,7 @@
                     
                 } catch (err) {
                     console.error(`[${type}] Parse error:`, err);
-                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob' };
+                    const typeMap = { burn: 'Burn', tx: 'Tx', gas: 'Gas', supply: 'Supply', dailyIssuance: 'DailyIssuance', blob: 'Blob', gasUtil: 'GasUtil' };
                     const statusEl = document.getElementById(`status${typeMap[type]}`);
                     statusEl.textContent = `✗ Parse error: ${err.message}`;
                     statusEl.className = 'csv-status error';
@@ -614,6 +644,47 @@
                     }
                     
                     totalImported += blobRecords.length;
+                }
+                
+                // Import Gas Utilization data (from Etherscan CSV)
+                if (csvData.gasUtil) {
+                    progressEl.textContent = 'Importing Gas Utilization data...';
+                    
+                    const gasUtilRecords = csvData.gasUtil;
+                    log(`📦 Gas Utilization: Updating ${gasUtilRecords.length} records`, 'info');
+                    
+                    // Update existing records in historical_gas_burn with gas_utilization
+                    let updated = 0;
+                    for (const record of gasUtilRecords) {
+                        const { error } = await supabase.from('historical_gas_burn')
+                            .update({ gas_utilization: record.gas_utilization, source: 'etherscan_csv' })
+                            .eq('date', record.date);
+                        if (!error) updated++;
+                    }
+                    
+                    // For dates without existing gas_burn record, insert new record
+                    const { data: existingDates } = await supabase.from('historical_gas_burn')
+                        .select('date');
+                    const existingSet = new Set(existingDates?.map(d => d.date) || []);
+                    
+                    const newRecords = gasUtilRecords
+                        .filter(r => !existingSet.has(r.date))
+                        .map(r => ({
+                            date: r.date,
+                            gas_utilization: r.gas_utilization,
+                            eth_burnt: 0,
+                            source: 'etherscan_csv'
+                        }));
+                    
+                    if (newRecords.length > 0) {
+                        const { error: insertError } = await batchUpsert('historical_gas_burn', newRecords);
+                        if (insertError) {
+                            log(`⚠️ Gas Utilization insert error: ${insertError.message}`, 'warn');
+                        }
+                    }
+                    
+                    log(`✅ Gas Utilization: Updated ${updated}, inserted ${newRecords.length} records`, 'success');
+                    totalImported += gasUtilRecords.length;
                 }
                 
                 progressEl.textContent = `✓ Done! Imported ${totalImported} total records`;

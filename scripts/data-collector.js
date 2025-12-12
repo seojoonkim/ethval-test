@@ -167,10 +167,48 @@ async function collect_staking() {
 }
 
 // ============================================================
-// 6. Gas & Burn (calculated from fees/price)
+// 6. Gas & Burn (Etherscan API for gas utilization)
 // ============================================================
 async function collect_gas_burn() {
     console.log('\n🔥 [6/29] Gas & Burn...');
+    
+    const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
+    
+    // 1. 먼저 기존 데이터에서 마지막 날짜 확인
+    const { data: existing } = await supabase.from('historical_gas_burn')
+        .select('date')
+        .order('date', { ascending: false })
+        .limit(1);
+    
+    const lastDate = existing?.[0]?.date || '2022-01-01';
+    const startDate = new Date(lastDate);
+    startDate.setDate(startDate.getDate() + 1);
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() - 1); // 어제까지
+    
+    if (startDate >= endDate) {
+        console.log('  ✅ Already up to date');
+        return 0;
+    }
+    
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+    console.log(`  📅 Fetching ${startStr} to ${endStr}`);
+    
+    // 2. Etherscan API로 Gas Utilization 가져오기
+    let gasUtilData = [];
+    if (ETHERSCAN_API_KEY) {
+        const utilUrl = `https://api.etherscan.io/api?module=stats&action=dailynetutilization&startdate=${startStr}&enddate=${endStr}&sort=asc&apikey=${ETHERSCAN_API_KEY}`;
+        const utilRes = await fetchJSON(utilUrl);
+        if (utilRes?.status === '1' && utilRes.result) {
+            gasUtilData = utilRes.result;
+            console.log(`  📊 Got ${gasUtilData.length} days of gas utilization from Etherscan`);
+        }
+    } else {
+        console.log('  ⚠️ ETHERSCAN_API_KEY not set, skipping gas utilization');
+    }
+    
+    // 3. fees/price 데이터로 ETH burnt 계산
     const { data: fees } = await supabase.from('historical_protocol_fees').select('date, fees').order('date');
     const { data: prices } = await supabase.from('historical_eth_price').select('date, close').order('date');
     if (!fees || !prices) return 0;
@@ -178,15 +216,37 @@ async function collect_gas_burn() {
     const priceMap = new Map();
     prices.forEach(p => priceMap.set(p.date, parseFloat(p.close)));
     
+    const gasUtilMap = new Map();
+    gasUtilData.forEach(d => {
+        gasUtilMap.set(d.UTCDate, parseFloat(d.networkUtilization) * 100);
+    });
+    
     const records = [];
     for (const f of fees) {
+        if (f.date < startStr || f.date > endStr) continue;
+        
         const price = priceMap.get(f.date);
         if (!price || !f.fees) continue;
+        
         const burn = (f.fees * 0.80) / price;
         if (burn >= 50 && burn <= 50000) {
-            records.push({ date: f.date, eth_burnt: parseFloat(burn.toFixed(2)), avg_gas_price_gwei: null, transaction_count: null, source: 'calculated' });
+            records.push({
+                date: f.date,
+                eth_burnt: parseFloat(burn.toFixed(2)),
+                avg_gas_price_gwei: null,
+                gas_utilization: gasUtilMap.get(f.date) || null,
+                transaction_count: null,
+                source: gasUtilMap.has(f.date) ? 'etherscan' : 'calculated'
+            });
         }
     }
+    
+    if (records.length === 0) {
+        console.log('  ✅ No new records to add');
+        return 0;
+    }
+    
+    console.log(`  📦 Saving ${records.length} records`);
     return await upsertBatch('historical_gas_burn', records);
 }
 
