@@ -1233,6 +1233,21 @@
 
             // 6. Gas & Burn - Etherscan V2 with fallback
             async gas_burn() {
+                // 먼저 기존 CSV 데이터 확인
+                const { data: existingData } = await supabase.from('historical_gas_burn')
+                    .select('date, eth_burnt')
+                    .order('date', { ascending: false })
+                    .limit(1200);
+                
+                const existingDates = new Set(existingData?.filter(d => d.eth_burnt > 0).map(d => d.date) || []);
+                log(`  📋 Existing gas_burn records: ${existingDates.size}`, 'info');
+                
+                // CSV 데이터가 충분하면 (1000개 이상) 완전히 건너뛰기
+                if (existingDates.size > 1000) {
+                    log(`  ✅ Skipping - sufficient CSV data exists (${existingDates.size} records)`, 'success');
+                    return 0;
+                }
+                
                 const endDate = new Date().toISOString().split('T')[0];
                 const startDate = new Date(Date.now() - 1095 * 86400000).toISOString().split('T')[0];
                 
@@ -1251,6 +1266,9 @@
                         const records = [];
                         
                         for (const d of gasPriceData.result) {
+                            // 기존 CSV 데이터가 있는 날짜는 건너뛰기
+                            if (existingDates.has(d.UTCDate)) continue;
+                            
                             const gasPrice = parseFloat(d.avgGasPrice_Wei) / 1e9;
                             const gasUsed = gasUsedMap.get(d.UTCDate) || 0;
                             const baseFeeGwei = gasPrice * 0.8;
@@ -1266,6 +1284,12 @@
                             }
                         }
                         
+                        if (records.length === 0) {
+                            log(`  ✅ All dates already have CSV data`, 'success');
+                            return 0;
+                        }
+                        
+                        log(`  📦 Adding ${records.length} new records from Etherscan`, 'info');
                         const { error } = await batchUpsert('historical_gas_burn', records);
                         if (error) log(`  ❌ ${error.message}`, 'error');
                         return error ? 0 : records.length;
@@ -1273,7 +1297,9 @@
                     log(`  ⚠️ Etherscan V2 stats requires PRO - using estimates`, 'warn');
                 }
                 
-                // Fallback: Protocol fees 기반 추정
+                // Fallback: Protocol fees 기반 추정 (CSV 데이터 없는 날짜만)
+                // existingDates는 이미 위에서 조회됨
+                
                 const { data: fees } = await supabase.from('historical_protocol_fees')
                     .select('date, fees')
                     .eq('chain', 'ethereum')
@@ -1294,6 +1320,9 @@
                     const date = new Date(today);
                     date.setDate(date.getDate() - i);
                     const dateStr = date.toISOString().split('T')[0];
+                    
+                    // CSV 데이터가 있는 날짜는 건너뛰기
+                    if (existingDates.has(dateStr)) continue;
                     
                     const dailyFee = feeMap.get(dateStr);
                     const txCount = txMap.get(dateStr) || 1150000;
@@ -1327,7 +1356,12 @@
                     });
                 }
                 
-                log(`  📦 Generated ${records.length} records (fee-based estimates)`, 'info');
+                if (records.length === 0) {
+                    log(`  ✅ All dates already have data`, 'success');
+                    return 0;
+                }
+                
+                log(`  📦 Generated ${records.length} records for missing dates (fee-based estimates)`, 'info');
                 const { error } = await batchUpsert('historical_gas_burn', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
@@ -1349,16 +1383,43 @@
 
             // 8. ETH Supply - HAS source (no timestamp in schema)
             async eth_supply() {
+                // 먼저 기존 데이터 확인 (CSV 데이터 보호)
+                const { data: existingData } = await supabase.from('historical_eth_supply')
+                    .select('date, eth_supply')
+                    .order('date', { ascending: false })
+                    .limit(1200);
+                
+                const existingDates = new Set(existingData?.filter(d => d.eth_supply > 0).map(d => d.date) || []);
+                log(`  📋 Existing eth_supply records: ${existingDates.size}`, 'info');
+                
+                // CSV 데이터가 많이 있으면 (1000개 이상) 건너뛰기
+                if (existingDates.size > 1000) {
+                    log(`  ✅ Skipping - sufficient CSV data exists (${existingDates.size} records)`, 'success');
+                    return 0;
+                }
+                
                 const today = new Date();
                 const records = [];
                 for (let i = 0; i < 1095; i++) {
                     const date = new Date(today); date.setDate(date.getDate() - i);
+                    const dateStr = date.toISOString().split('T')[0];
+                    
+                    // 기존 데이터가 있는 날짜는 건너뛰기
+                    if (existingDates.has(dateStr)) continue;
+                    
                     records.push({
-                        date: date.toISOString().split('T')[0],
+                        date: dateStr,
                         eth_supply: 120400000 + (i * 100),
                         source: 'estimated'
                     });
                 }
+                
+                if (records.length === 0) {
+                    log(`  ✅ All dates already have data`, 'success');
+                    return 0;
+                }
+                
+                log(`  📦 Generated ${records.length} records for missing dates`, 'info');
                 const { error } = await batchUpsert('historical_eth_supply', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
@@ -1750,6 +1811,21 @@
 
             // 21. Transactions - Etherscan V2 with fallback
             async transactions() {
+                // 먼저 기존 CSV 데이터 확인
+                const { data: existingData } = await supabase.from('historical_transactions')
+                    .select('date, tx_count')
+                    .order('date', { ascending: false })
+                    .limit(1200);
+                
+                const existingDates = new Set(existingData?.filter(d => d.tx_count > 0).map(d => d.date) || []);
+                log(`  📋 Existing transactions records: ${existingDates.size}`, 'info');
+                
+                // CSV 데이터가 충분하면 (1000개 이상) 완전히 건너뛰기
+                if (existingDates.size > 1000) {
+                    log(`  ✅ Skipping - sufficient CSV data exists (${existingDates.size} records)`, 'success');
+                    return 0;
+                }
+                
                 // Etherscan V2 API - Daily Transaction Count (PRO 전용일 수 있음)
                 if (ETHERSCAN_API_KEY) {
                     const endDate = new Date().toISOString().split('T')[0];
@@ -1761,11 +1837,22 @@
                     
                     if (data?.status === '1' && data.result?.length > 0) {
                         log(`  📦 Got ${data.result.length} days from Etherscan V2`, 'info');
-                        const records = data.result.map(d => ({
-                            date: d.UTCDate,
-                            timestamp: parseInt(d.unixTimeStamp) * 1000,
-                            tx_count: parseInt(d.transactionCount)
-                        }));
+                        
+                        // 기존 CSV 데이터가 있는 날짜는 건너뛰기
+                        const records = data.result
+                            .filter(d => !existingDates.has(d.UTCDate))
+                            .map(d => ({
+                                date: d.UTCDate,
+                                timestamp: parseInt(d.unixTimeStamp) * 1000,
+                                tx_count: parseInt(d.transactionCount)
+                            }));
+                        
+                        if (records.length === 0) {
+                            log(`  ✅ All dates already have CSV data`, 'success');
+                            return 0;
+                        }
+                        
+                        log(`  📦 Adding ${records.length} new records from Etherscan`, 'info');
                         const { error } = await batchUpsert('historical_transactions', records);
                         if (error) log(`  ❌ ${error.message}`, 'error');
                         return error ? 0 : records.length;
@@ -1773,7 +1860,9 @@
                     log(`  ⚠️ Etherscan V2 stats requires PRO - using estimates`, 'warn');
                 }
                 
-                // Fallback: Protocol fees 기반 추정
+                // Fallback: Protocol fees 기반 추정 (CSV 데이터 없는 날짜만)
+                // existingDates는 이미 위에서 조회됨
+                
                 // ETH fees와 트랜잭션 수는 상관관계가 있음
                 const { data: fees } = await supabase.from('historical_protocol_fees')
                     .select('date, fees')
@@ -1789,6 +1878,9 @@
                     const date = new Date(today);
                     date.setDate(date.getDate() - i);
                     const dateStr = date.toISOString().split('T')[0];
+                    
+                    // 기존 데이터가 있는 날짜는 건너뛰기
+                    if (existingDates.has(dateStr)) continue;
                     
                     // Fee 데이터가 있으면 기반으로 추정 (avg fee ~$2-5 per tx)
                     const dailyFee = feeMap.get(dateStr);
@@ -1813,7 +1905,12 @@
                     });
                 }
                 
-                log(`  📦 Generated ${records.length} records (fee-based estimates)`, 'info');
+                if (records.length === 0) {
+                    log(`  ✅ All dates already have data`, 'success');
+                    return 0;
+                }
+                
+                log(`  📦 Generated ${records.length} records for missing dates (fee-based estimates)`, 'info');
                 const { error } = await batchUpsert('historical_transactions', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
