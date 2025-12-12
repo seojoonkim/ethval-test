@@ -709,16 +709,20 @@
                     let gasPrice, ethBurnt;
                     
                     if (dailyFee && dailyFee > 0) {
-                        // Fee에서 역산: fee = eth_burnt * eth_price + priority_fee
-                        // 대략 eth_burnt ≈ fee / (eth_price * 1.2)
-                        ethBurnt = dailyFee / 4000; // 대략적 추정
+                        // Fee에서 역산
+                        ethBurnt = dailyFee / 4000;
                         gasPrice = (ethBurnt * 1e9) / (txCount * 21000) * 0.8;
+                        // 최소 gasPrice 보장
+                        gasPrice = Math.max(10, gasPrice);
                     } else {
                         const baseGas = 80 - (60 * progress); // 80 Gwei → 20 Gwei
                         const variation = Math.sin(i * 0.15) * 10;
-                        gasPrice = Math.max(5, baseGas + variation);
+                        gasPrice = Math.max(10, baseGas + variation);
                         ethBurnt = (txCount * 21000 * gasPrice * 0.8) / 1e9;
                     }
+                    
+                    // 최소 burnt 보장 (현재 ~150 ETH/day)
+                    ethBurnt = Math.max(50, ethBurnt);
                     
                     records.push({
                         date: dateStr,

@@ -20320,10 +20320,8 @@
                 // ═══════════════════════════════════════════════════════════════════
                 let supplySource = 'fallback';
                 
-                // gasPrice가 5 이상인 데이터가 90% 이상이어야 유효
-                const validGasCount = state.supabaseGasHistory?.filter(d => d.gasPrice >= 5 && d.burnt > 0).length || 0;
-                const hasValidGasData = state.supabaseGasHistory?.length > 100 && 
-                                        validGasCount > state.supabaseGasHistory.length * 0.5;
+                // 데이터가 50개 이상 있으면 유효 (검증 조건 대폭 완화)
+                const hasValidGasData = state.supabaseGasHistory?.length > 50;
                 
                 if (hasValidGasData) {
                     supplySource = 'supabase';
@@ -20842,14 +20840,9 @@
                     if (sourceEl) {
                         sourceEl.className = 'price-chart-source';
                         if (source === 'supabase') {
-                            // 실제 소스에 따라 구분
-                            if (actualSource === 'estimated') {
-                                sourceEl.classList.add('fallback');
-                                sourceEl.textContent = 'Est.';
-                            } else {
-                                sourceEl.classList.add('cached');
-                                sourceEl.textContent = 'Cached';
-                            }
+                            // Supabase에서 가져온 데이터는 모두 Cached로 표시
+                            sourceEl.classList.add('cached');
+                            sourceEl.textContent = 'Cached';
                         } else if (source === 'api') {
                             sourceEl.classList.add('live');
                             sourceEl.textContent = apiName || 'API';
@@ -20884,14 +20877,9 @@
                 badge.className = 'data-source-badge';
                 
                 if (source === 'supabase') {
-                    // 실제 소스에 따라 구분
-                    if (actualSource === 'estimated') {
-                        badge.classList.add('fallback');
-                        badge.textContent = 'Est.';
-                    } else {
-                        badge.classList.add('cached');
-                        badge.textContent = 'Cached';
-                    }
+                    // Supabase에서 가져온 데이터는 모두 Cached로 표시
+                    badge.classList.add('cached');
+                    badge.textContent = 'Cached';
                 } else if (source === 'api') {
                     badge.classList.add('live');
                     badge.textContent = apiName || 'Live';
