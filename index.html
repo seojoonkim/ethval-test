@@ -18290,22 +18290,17 @@
                 state.baseFee = currentBaseFee;
                 log(`Base Fee source: ${dataSource}, Value: ${currentBaseFee.toFixed(1)} Gwei`);
                 
-                // Build history - use fees history as proxy if available
+                // Build history - use actual gas price data from Supabase
                 state.baseFeeHistory = [];
-                if (state.feesHistory && state.feesHistory.length > 0) {
-                    const ethPrice = state.price || 3500;
-                    for (let i = 0; i < state.feesHistory.length; i++) {
-                        const fee = state.feesHistory[i];
-                        // Estimate base fee from daily fees
-                        // Higher fees = higher base fee
-                        const avgDailyFees = state.fees || 5000000;
-                        const feeRatio = fee.value / avgDailyFees;
-                        const estimatedBaseFee = currentBaseFee * feeRatio;
-                        state.baseFeeHistory.push({
-                            date: fee.date,
-                            value: Math.max(5, Math.min(200, estimatedBaseFee))
-                        });
-                    }
+                if (state.supabaseGasHistory && state.supabaseGasHistory.length > 0) {
+                    // Use actual avg_gas_price_gwei from Supabase
+                    state.baseFeeHistory = state.supabaseGasHistory
+                        .filter(d => d.gasPrice > 0)
+                        .map(d => ({
+                            date: d.date,
+                            value: d.gasPrice * 0.85  // Base fee is ~85% of gas price
+                        }));
+                    log(`   Base Fee: Using Supabase gas history (${state.baseFeeHistory.length} points)`);
                 } else if (state.gasPriceHistory && state.gasPriceHistory.length > 0) {
                     for (let i = 0; i < state.gasPriceHistory.length; i++) {
                         const d = state.gasPriceHistory[i];
@@ -18316,7 +18311,6 @@
                     }
                 } else {
                     // Generate simulated history if no data available yet
-                    // This will be updated when feesHistory loads
                     const now = Date.now();
                     for (let i = 0; i < 52; i++) {
                         const variation = 1 + 0.3 * Math.sin(i * 0.4);
@@ -20600,12 +20594,27 @@
                 }
                 
                 // ═══════════════════════════════════════════════════════════════════
-                // 16. Base Fee
+                // 16. Base Fee - Use actual gas price data from Supabase
                 // ═══════════════════════════════════════════════════════════════════
-                setEl('base-fee-value', state.baseFee.toFixed(1) + ' Gwei');
+                let baseFeeSource = 'fallback';
+                if (state.supabaseGasHistory?.length > 0) {
+                    // Use actual avg_gas_price_gwei from Supabase
+                    state.baseFeeHistory = state.supabaseGasHistory
+                        .filter(d => d.gasPrice > 0)
+                        .map(d => ({
+                            date: d.date,
+                            value: d.gasPrice * 0.85  // Base fee is ~85% of gas price
+                        }));
+                    if (state.baseFeeHistory.length > 0) {
+                        state.baseFee = state.baseFeeHistory[state.baseFeeHistory.length - 1].value;
+                        baseFeeSource = 'supabase';
+                    }
+                }
+                if (!state.baseFee || state.baseFee === 0) state.baseFee = 12;
                 if (!state.baseFeeHistory?.length) state.baseFeeHistory = simpleHistory(12);
+                setEl('base-fee-value', state.baseFee.toFixed(1) + ' Gwei');
                 safeCall(() => updateBaseFeeChart(), 'baseFee');
-                setDataSource('base-fee-chart', supplySource);
+                setDataSource('base-fee-chart', baseFeeSource);
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // 17. Blob Fees & Count (7일 합계)
