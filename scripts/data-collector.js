@@ -123,33 +123,47 @@ async function collect_staking() {
     console.log('\n🥩 [5/29] Staking Data...');
     const records = [];
     
-    // Historical staked ether
+    // beaconcha.in staked_ether 차트 (전체 Effective Balance 합계)
     const chart = await fetchJSON('https://beaconcha.in/api/v1/chart/staked_ether');
     if (chart?.status === 'OK' && chart.data) {
-        for (const item of chart.data) {
-            if (Array.isArray(item) && item[1] > 0) {
-                records.push({
-                    date: new Date(item[0]).toISOString().split('T')[0],
-                    total_staked_eth: parseFloat(item[1]),
-                    total_validators: Math.floor(item[1] / 32),
-                    avg_apr: null, source: 'beaconchain'
-                });
+        console.log(`  📊 Beaconcha.in chart: ${chart.data.length} points`);
+        
+        // 날짜순 정렬
+        const sortedData = chart.data
+            .filter(item => Array.isArray(item) && item[1] > 0)
+            .sort((a, b) => a[0] - b[0]);
+        
+        let prevValue = null;
+        for (const item of sortedData) {
+            const stakedEth = parseFloat(item[1]);
+            const date = new Date(item[0]).toISOString().split('T')[0];
+            
+            // 기본 범위 검증 (15M ~ 40M)
+            if (stakedEth < 15000000 || stakedEth > 40000000) {
+                console.log(`  ⚠️ Skip ${date}: ${(stakedEth/1e6).toFixed(2)}M out of range`);
+                continue;
             }
+            
+            // 일일 변동폭 검증 (전날 대비 2% 초과 변동 시 스킵)
+            if (prevValue !== null) {
+                const changePercent = Math.abs((stakedEth - prevValue) / prevValue * 100);
+                if (changePercent > 2) {
+                    console.log(`  ⚠️ Skip ${date}: ${changePercent.toFixed(2)}% daily change (abnormal)`);
+                    continue;
+                }
+            }
+            
+            records.push({
+                date: date,
+                total_staked_eth: stakedEth,
+                total_validators: Math.floor(stakedEth / 32),
+                avg_apr: null,
+                source: 'beaconchain'
+            });
+            
+            prevValue = stakedEth;
         }
-    }
-    
-    // Current epoch
-    const epoch = await fetchJSON('https://beaconcha.in/api/v1/epoch/latest');
-    if (epoch?.status === 'OK' && epoch.data) {
-        const today = new Date().toISOString().split('T')[0];
-        const validators = epoch.data.validatorscount;
-        const idx = records.findIndex(r => r.date === today);
-        if (idx >= 0) {
-            records[idx].total_staked_eth = validators * 32;
-            records[idx].total_validators = validators;
-        } else {
-            records.push({ date: today, total_staked_eth: validators * 32, total_validators: validators, avg_apr: null, source: 'beaconchain' });
-        }
+        console.log(`  ✅ Valid records after filtering: ${records.length}`);
     }
     
     // APR from Lido
@@ -160,9 +174,16 @@ async function collect_staking() {
         if (idx >= 0) records[idx].avg_apr = parseFloat(lido.data.smaApr.toFixed(2));
     }
     
-    // Dedupe
+    // 최근 1095일만 유지
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 1095);
+    const filtered = records.filter(r => new Date(r.date) >= cutoff);
+    
+    // Dedupe (같은 날짜 중복 제거)
     const unique = new Map();
-    records.forEach(r => unique.set(r.date, r));
+    filtered.forEach(r => unique.set(r.date, r));
+    
+    console.log(`  📦 ${unique.size} staking records to save`);
     return await upsertBatch('historical_staking', Array.from(unique.values()));
 }
 
