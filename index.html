@@ -20627,8 +20627,8 @@
                     if (!state.txEthHistory?.length) state.txEthHistory = simpleHistory(1.2e6);
                     if (!state.txTotalHistory?.length) state.txTotalHistory = simpleHistory(5e6);
                 }
-                setEl('tx-eth', (state.txEth / 1e6).toFixed(2) + 'M');
-                setEl('tx-total', ((state.txTotal || state.txEth * 4) / 1e6).toFixed(1) + 'M');
+                setEl('tx-eth-value', (state.txEth / 1e6).toFixed(2) + 'M');
+                setEl('tx-total-value', ((state.txTotal || state.txEth * 4) / 1e6).toFixed(1) + 'M');
                 safeCall(() => updateMetricChart('tx-eth-chart', txEthChart, state.txEthHistory, '#14b8a6', 'txEth'), 'txEth');
                 safeCall(() => updateMetricChart('tx-total-chart', txTotalChart, state.txTotalHistory, '#8b5cf6', 'txTotal'), 'txTotal');
                 setDataSource('tx-eth-chart', txSource);
