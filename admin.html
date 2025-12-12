@@ -1614,8 +1614,72 @@
 
             // 9. Fear & Greed - HAS source
             async fear_greed() {
+                log('  🔍 Fetching Fear & Greed from alternative.me...', 'info');
                 const data = await fetchJSON('https://api.alternative.me/fng/?limit=1095&format=json');
-                if (!data?.data) return 0;
+                
+                if (!data?.data || data.data.length === 0) {
+                    log('  ⚠️ API failed, using price-based estimates', 'warn');
+                    
+                    // Fallback: ETH price 변동 기반 추정
+                    const { data: prices } = await supabase.from('historical_eth_price')
+                        .select('date, close')
+                        .order('date', { ascending: true })
+                        .limit(1100);
+                    
+                    if (!prices || prices.length < 30) {
+                        log('  ❌ Not enough price data for fallback', 'error');
+                        return 0;
+                    }
+                    
+                    const records = [];
+                    for (let i = 30; i < prices.length; i++) {
+                        const current = prices[i].close;
+                        const prev30 = prices[i - 30].close;
+                        const change30d = ((current - prev30) / prev30) * 100;
+                        
+                        // 30일 변동률 기반 Fear & Greed 추정
+                        // -30% 이하: Extreme Fear (10-20)
+                        // -15% ~ -30%: Fear (20-40)
+                        // -5% ~ -15%: Neutral-Fear (40-50)
+                        // -5% ~ +5%: Neutral (45-55)
+                        // +5% ~ +15%: Neutral-Greed (50-60)
+                        // +15% ~ +30%: Greed (60-80)
+                        // +30% 이상: Extreme Greed (80-95)
+                        
+                        let value;
+                        if (change30d < -30) value = 10 + Math.random() * 10;
+                        else if (change30d < -15) value = 20 + (change30d + 30) / 15 * 20;
+                        else if (change30d < -5) value = 40 + (change30d + 15) / 10 * 10;
+                        else if (change30d < 5) value = 45 + (change30d + 5) / 10 * 10;
+                        else if (change30d < 15) value = 55 + (change30d - 5) / 10 * 10;
+                        else if (change30d < 30) value = 65 + (change30d - 15) / 15 * 15;
+                        else value = 80 + Math.min(15, (change30d - 30) / 20 * 15);
+                        
+                        value = Math.max(5, Math.min(95, Math.round(value)));
+                        
+                        let classification;
+                        if (value < 25) classification = 'Extreme Fear';
+                        else if (value < 40) classification = 'Fear';
+                        else if (value < 60) classification = 'Neutral';
+                        else if (value < 75) classification = 'Greed';
+                        else classification = 'Extreme Greed';
+                        
+                        records.push({
+                            date: prices[i].date,
+                            timestamp: new Date(prices[i].date).getTime(),
+                            value,
+                            classification,
+                            source: 'estimated'
+                        });
+                    }
+                    
+                    log(`  📦 Generated ${records.length} estimated records`, 'info');
+                    const { error } = await batchUpsert('historical_fear_greed', records);
+                    if (error) log(`  ❌ ${error.message}`, 'error');
+                    return 0; // API 실패이므로 0 반환
+                }
+                
+                log(`  📦 Got ${data.data.length} records from API`, 'info');
                 const records = data.data.map(d => ({
                     date: new Date(parseInt(d.timestamp) * 1000).toISOString().split('T')[0],
                     timestamp: parseInt(d.timestamp) * 1000,
@@ -1623,6 +1687,14 @@
                     classification: d.value_classification,
                     source: 'alternative_me'
                 }));
+                
+                // 데이터 검증 로그
+                const values = records.map(r => r.value);
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                const avg = values.reduce((a, b) => a + b, 0) / values.length;
+                log(`  📊 Value range: ${min}-${max}, avg: ${avg.toFixed(1)}`, 'info');
+                
                 const { error } = await batchUpsert('historical_fear_greed', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
@@ -1750,26 +1822,40 @@
             // 15. Exchange Reserve - HAS source
             async exchange_reserve() {
                 // ⚠️ 무료 API 없음 - CryptoQuant/Glassnode/CoinGlass 모두 유료 ($29+/월)
-                // 추정 데이터: 2022년 ~24M → 2025년 ~15M (지속적 감소 추세)
+                // 추정 데이터: 2022년 12월 ~24M → 2025년 12월 ~15M (지속적 감소 추세)
                 log('  ⚠️ No free API (Glassnode/CoinGlass paid only) - using estimates', 'warn');
                 
                 const today = new Date();
+                const startDate = new Date('2022-01-01');
                 const records = [];
                 
                 for (let i = 0; i < 1095; i++) {
                     const date = new Date(today);
                     date.setDate(date.getDate() - i);
                     
-                    // 3년 전 (Dec 2022): ~24M ETH → 현재 (Dec 2025): ~15M ETH
-                    const daysFromStart = 1095 - i;
-                    const progress = daysFromStart / 1095;
-                    const baseTrend = 24000000 - (9000000 * progress);
+                    // 날짜 기준 진행도 (0=3년전, 1=오늘)
+                    const daysSinceStart = Math.floor((date - startDate) / 86400000);
+                    const totalDays = Math.floor((today - startDate) / 86400000);
+                    const progress = Math.max(0, Math.min(1, daysSinceStart / totalDays));
                     
-                    // 월별 변동
-                    const monthCycle = Math.sin(daysFromStart * 0.02) * baseTrend * 0.03;
-                    const weekCycle = Math.sin(daysFromStart * 0.09) * baseTrend * 0.015;
+                    // 2022년: ~24M ETH → 2025년: ~15M ETH (꾸준한 감소)
+                    // FTX 붕괴 (2022.11) 이후 급격한 감소 → 이후 완만한 감소
+                    let baseTrend;
+                    if (date < new Date('2022-11-01')) {
+                        baseTrend = 24000000; // FTX 전
+                    } else if (date < new Date('2023-06-01')) {
+                        // FTX 붕괴 후 급감 (24M → 18M)
+                        const ftxProgress = (date - new Date('2022-11-01')) / (new Date('2023-06-01') - new Date('2022-11-01'));
+                        baseTrend = 24000000 - (6000000 * ftxProgress);
+                    } else {
+                        // 2023년 중반 이후 완만한 감소 (18M → 15M)
+                        const postFtxProgress = (date - new Date('2023-06-01')) / (today - new Date('2023-06-01'));
+                        baseTrend = 18000000 - (3000000 * Math.min(1, postFtxProgress));
+                    }
                     
-                    const reserve = Math.max(13000000, baseTrend + monthCycle + weekCycle);
+                    // 소폭 변동 (±2%)
+                    const noise = (Math.sin(i * 0.3) * 0.01 + Math.sin(i * 0.07) * 0.01) * baseTrend;
+                    const reserve = Math.max(14000000, baseTrend + noise);
                     
                     records.push({
                         date: date.toISOString().split('T')[0],
@@ -1778,6 +1864,7 @@
                         source: 'estimated'
                     });
                 }
+                
                 const { error } = await batchUpsert('historical_exchange_reserve', records);
                 if (error) log(`  ❌ ${error.message}`, 'error');
                 return error ? 0 : records.length;
