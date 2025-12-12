@@ -9228,19 +9228,16 @@
                             <h4>Net Supply</h4>
                             <div class="metric-value-large" id="net-supply-change">--%/yr</div>
                         </div>
-                        <div class="metric-header-right">
-                            <span id="supply-status-badge" class="supply-status">--</span>
-                            <div class="metric-tabs" data-chart="net-supply">
-                                
-                                <button class="metric-tab" data-period="90">90D</button>
-                                <button class="metric-tab" data-period="365">1Y</button>
+                        <div class="metric-tabs" data-chart="net-supply">
+                            <button class="metric-tab" data-period="90">90D</button>
+                            <button class="metric-tab" data-period="365">1Y</button>
                             <button class="metric-tab active" data-period="1095">3Y</button>
-                            </div>
                         </div>
                     </div>
                     <div class="metric-chart"><div class="chart-loader"><div class="spinner"></div><span class="loading-text">Loading...</span></div><canvas id="net-supply-chart"></canvas></div>
                     <div class="metric-footer">
                         <span>Burn - Issuance</span>
+                        <span class="cached-badge">Cached</span>
                         <span class="change" id="net-supply-status">--</span>
                     </div>
                 </div>
@@ -15181,7 +15178,7 @@
                     }
                     
                     // 차트 업데이트
-                    updateEthBtcChart();
+                    updateEthBtcChartWithPeriod(days);
                 }
                 
                 updateCombinedPriceVolumeChart(days);
@@ -16118,8 +16115,8 @@
                 // ═══════════════════════════════════════════════════════════════════
                 // 차트 업데이트 및 소스 표시
                 // ═══════════════════════════════════════════════════════════════════
-                updateDominanceChart();
-                updateEthBtcChart();
+                updateDominanceChartWithPeriod(1095);
+                updateEthBtcChartWithPeriod(1095);
                 
                 setDataSource('dominance-chart', dominanceSource, 'CoinGecko');
                 setDataSource('ethbtc-chart', ethbtcSource, 'Binance');
@@ -16866,7 +16863,7 @@
                 state.reserveHistory = state.supabaseReserveHistory;
                 state.exchangeReserve = state.reserveHistory[state.reserveHistory.length - 1].value;
                 document.getElementById('exchange-reserve').textContent = fmt.num(state.exchangeReserve, 1) + ' ETH';
-                updateReserveChart();
+                updateReserveChartWithPeriod(1095);
                 
                 const first = state.reserveHistory[0].value;
                 const last = state.exchangeReserve;
@@ -16890,7 +16887,7 @@
             state.exchangeReserve = state.reserveHistory[state.reserveHistory.length - 1].value;
             
             document.getElementById('exchange-reserve').textContent = fmt.num(state.exchangeReserve, 1) + ' ETH';
-            updateReserveChart();
+            updateReserveChartWithPeriod(1095);
             
             // YoY 변화율
             const first = state.reserveHistory[0].value;
@@ -18588,10 +18585,10 @@
                 
                 // Update UI and Charts
                 updateSupplyDynamicsUI();
-                updateGasUtilizationChart(365);
-                updateDailyBurnChart(365);
-                updateDailyIssuanceChart(365);
-                updateNetSupplyChart(365);
+                updateGasUtilizationChart(1095);
+                updateDailyBurnChart(1095);
+                updateDailyIssuanceChart(1095);
+                updateNetSupplyChart(1095);
                 
                 // 데이터 소스 레이블 설정
                 const dataSource = state.supabaseGasHistory?.length > 0 ? 'supabase' : 'api';
@@ -18912,18 +18909,18 @@
                 netChangeEl.className = 'metric-value-large ' + (state.netSupplyChange <= 0 ? 'deflationary' : 'inflationary');
             }
             
-            // Deflationary status badge
-            const statusEl = document.getElementById('supply-status-badge');
+            // Net Supply status in footer
+            const statusEl = document.getElementById('net-supply-status');
             if (statusEl) {
                 if (state.netSupplyChange <= 0) {
-                    statusEl.textContent = '🔥 Deflationary';
-                    statusEl.className = 'supply-status deflationary';
+                    statusEl.textContent = 'Deflationary YoY';
+                    statusEl.className = 'change up';
                 } else if (state.netSupplyChange < 0.5) {
-                    statusEl.textContent = '⚖️ Neutral';
-                    statusEl.className = 'supply-status neutral';
+                    statusEl.textContent = 'Neutral YoY';
+                    statusEl.className = 'change';
                 } else {
-                    statusEl.textContent = '📈 Inflationary';
-                    statusEl.className = 'supply-status inflationary';
+                    statusEl.textContent = 'Inflationary YoY';
+                    statusEl.className = 'change down';
                 }
             }
         }
@@ -20442,7 +20439,7 @@
                     state.dominanceHistory = simpleHistory(9, 365);
                 }
                 setEl('eth-dominance', state.currentDominance.toFixed(1) + '%');
-                safeCall(() => updateDominanceChart(), 'dominance');
+                safeCall(() => updateDominanceChartWithPeriod(1095), 'dominance');
                 setDataSource('dominance-chart', dominanceSource, 'CoinGecko');
                 
                 let ethbtcSource = 'fallback';
@@ -20457,7 +20454,7 @@
                     state.ethbtcHistory = simpleHistory(0.035, 365);
                 }
                 setEl('eth-btc', state.ethBtcRatio.toFixed(5));
-                safeCall(() => updateEthBtcChart(), 'ethbtc');
+                safeCall(() => updateEthBtcChartWithPeriod(1095), 'ethbtc');
                 setDataSource('ethbtc-chart', ethbtcSource, 'Binance');
                 
                 // ═══════════════════════════════════════════════════════════════════
@@ -20540,10 +20537,10 @@
                     setEl('net-supply-change', (state.netSupplyChange >= 0 ? '+' : '') + state.netSupplyChange.toFixed(2) + '%/yr');
                     
                     // 차트 렌더링
-                    safeCall(() => updateGasUtilizationChart(365), 'gasUtil');
-                    safeCall(() => updateDailyBurnChart(365), 'burn');
-                    safeCall(() => updateDailyIssuanceChart(365), 'issuance');
-                    safeCall(() => updateNetSupplyChart(365), 'netSupply');
+                    safeCall(() => updateGasUtilizationChart(1095), 'gasUtil');
+                    safeCall(() => updateDailyBurnChart(1095), 'burn');
+                    safeCall(() => updateDailyIssuanceChart(1095), 'issuance');
+                    safeCall(() => updateNetSupplyChart(1095), 'netSupply');
                     setDataSource('gas-utilization-chart', supplySource);
                     setDataSource('daily-burn-chart', supplySource);
                     setDataSource('daily-issuance-chart', supplySource);
