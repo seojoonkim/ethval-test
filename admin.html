@@ -96,6 +96,78 @@
             <div class="section-title"><span>📊 29 Datasets</span><span class="mono" id="lastUpdate">-</span></div>
             <table><thead><tr><th>#</th><th>Dataset</th><th>Table</th><th>Records</th><th>Date Range</th><th>Value</th><th>Coverage</th><th>Status</th><th>Actions</th></tr></thead><tbody id="dataTable"></tbody></table>
         </div>
+        <!-- CSV Upload Section -->
+        <div class="table-container" style="margin-bottom: 24px;">
+            <div class="section-title">
+                <span>📁 Etherscan CSV Import (One-time Setup for Historical Data)</span>
+                <button class="btn btn-sm btn-primary" onclick="autoFillNewData()">🔄 Auto-fill New Data</button>
+            </div>
+            <div style="padding: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                    <!-- Daily ETH Burnt -->
+                    <div class="csv-upload-box" id="dropBurn" ondrop="handleDrop(event, 'burn')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">🔥</div>
+                        <div class="csv-title">Daily ETH Burnt</div>
+                        <div class="csv-desc">etherscan.io/chart/dailyethburnt</div>
+                        <input type="file" id="fileBurn" accept=".csv" onchange="handleFile(event, 'burn')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileBurn').click()">Select CSV</button>
+                        <div class="csv-status" id="statusBurn">No file</div>
+                    </div>
+                    <!-- Daily Transactions -->
+                    <div class="csv-upload-box" id="dropTx" ondrop="handleDrop(event, 'tx')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">📝</div>
+                        <div class="csv-title">Daily Transactions</div>
+                        <div class="csv-desc">etherscan.io/chart/tx</div>
+                        <input type="file" id="fileTx" accept=".csv" onchange="handleFile(event, 'tx')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileTx').click()">Select CSV</button>
+                        <div class="csv-status" id="statusTx">No file</div>
+                    </div>
+                    <!-- Gas Price -->
+                    <div class="csv-upload-box" id="dropGas" ondrop="handleDrop(event, 'gas')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                        <div class="csv-icon">⛽</div>
+                        <div class="csv-title">Avg Gas Price</div>
+                        <div class="csv-desc">etherscan.io/chart/gasprice</div>
+                        <input type="file" id="fileGas" accept=".csv" onchange="handleFile(event, 'gas')" style="display:none">
+                        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('fileGas').click()">Select CSV</button>
+                        <div class="csv-status" id="statusGas">No file</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <button class="btn btn-success" id="importBtn" onclick="importAllCSV()" disabled>📥 Import All to Supabase</button>
+                    <span id="importProgress" style="color: var(--text-muted); font-size: 13px;"></span>
+                </div>
+                <div style="margin-top: 12px; padding: 12px; background: var(--bg); border-radius: 8px; font-size: 12px; color: var(--text-muted);">
+                    💡 <b>How to get CSV:</b> Visit each Etherscan chart page → Click "Download: CSV Data" link at top → Upload here<br>
+                    🔄 <b>Auto-fill:</b> After CSV import, click "Auto-fill New Data" to calculate missing days using block data
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            .csv-upload-box { 
+                border: 2px dashed var(--border); 
+                border-radius: 12px; 
+                padding: 20px; 
+                text-align: center; 
+                transition: all 0.2s;
+                cursor: pointer;
+            }
+            .csv-upload-box:hover, .csv-upload-box.dragover { 
+                border-color: var(--primary); 
+                background: rgba(139, 92, 246, 0.1); 
+            }
+            .csv-upload-box.loaded { 
+                border-color: var(--success); 
+                background: rgba(34, 197, 94, 0.1); 
+            }
+            .csv-icon { font-size: 32px; margin-bottom: 8px; }
+            .csv-title { font-weight: 600; margin-bottom: 4px; }
+            .csv-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+            .csv-status { margin-top: 10px; font-size: 11px; color: var(--text-muted); }
+            .csv-status.success { color: var(--success); }
+            .csv-status.error { color: var(--error); }
+        </style>
+
         <div class="log-container">
             <div class="section-title">📝 Activity Log</div>
             <div class="log" id="log"></div>
@@ -146,6 +218,377 @@
         let SUPABASE_ANON_KEY = localStorage.getItem('ethval_supabase_key') || '';
         let ETHERSCAN_API_KEY = localStorage.getItem('ethval_etherscan_key') || '';
         let supabase;
+        
+        // CSV Data Storage
+        const csvData = { burn: null, tx: null, gas: null };
+
+        // ═══════════════════════════════════════════════════════════════════
+        // CSV UPLOAD & PARSING
+        // ═══════════════════════════════════════════════════════════════════
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('dragover');
+        }
+        
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('dragover');
+        }
+        
+        function handleDrop(e, type) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) processCSV(file, type);
+        }
+        
+        function handleFile(e, type) {
+            const file = e.target.files[0];
+            if (file) processCSV(file, type);
+        }
+        
+        function processCSV(file, type) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target.result;
+                    const lines = text.trim().split('\n');
+                    const records = [];
+                    
+                    // Skip header, parse data
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        
+                        // Etherscan CSV format: "Date(UTC)","UnixTimeStamp","Value"
+                        // Or variations like: Date(UTC),UnixTimeStamp,Value
+                        const parts = line.replace(/"/g, '').split(',');
+                        if (parts.length < 3) continue;
+                        
+                        const dateStr = parts[0]; // "12/11/2025" or "2025-12-11"
+                        const timestamp = parseInt(parts[1]);
+                        const value = parseFloat(parts[2]);
+                        
+                        if (isNaN(value)) continue;
+                        
+                        // Convert date format
+                        let isoDate;
+                        if (dateStr.includes('/')) {
+                            // MM/DD/YYYY format
+                            const [m, d, y] = dateStr.split('/');
+                            isoDate = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+                        } else {
+                            isoDate = dateStr;
+                        }
+                        
+                        records.push({ date: isoDate, timestamp, value });
+                    }
+                    
+                    csvData[type] = records;
+                    
+                    const statusEl = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                    const boxEl = document.getElementById(`drop${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                    
+                    statusEl.textContent = `✓ ${records.length} records loaded`;
+                    statusEl.className = 'csv-status success';
+                    boxEl.classList.add('loaded');
+                    
+                    updateImportButton();
+                    log(`📁 ${type.toUpperCase()}: Parsed ${records.length} records from CSV`, 'success');
+                    
+                } catch (err) {
+                    const statusEl = document.getElementById(`status${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                    statusEl.textContent = `✗ Parse error: ${err.message}`;
+                    statusEl.className = 'csv-status error';
+                    log(`❌ ${type.toUpperCase()}: CSV parse error - ${err.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        function updateImportButton() {
+            const btn = document.getElementById('importBtn');
+            const loaded = Object.values(csvData).filter(v => v !== null).length;
+            btn.disabled = loaded === 0;
+            btn.textContent = `📥 Import ${loaded}/3 Files to Supabase`;
+        }
+        
+        async function importAllCSV() {
+            if (!supabase) {
+                alert('Please configure Supabase first!');
+                return;
+            }
+            
+            const progressEl = document.getElementById('importProgress');
+            let totalImported = 0;
+            
+            try {
+                // Import Gas & Burn data (combined table)
+                if (csvData.burn || csvData.gas) {
+                    progressEl.textContent = 'Importing Gas & Burn data...';
+                    
+                    // Merge burn and gas data by date
+                    const mergedData = new Map();
+                    
+                    if (csvData.burn) {
+                        csvData.burn.forEach(r => {
+                            mergedData.set(r.date, { 
+                                date: r.date, 
+                                eth_burnt: r.value,
+                                avg_gas_price_gwei: 0,
+                                transaction_count: 0
+                            });
+                        });
+                    }
+                    
+                    if (csvData.gas) {
+                        csvData.gas.forEach(r => {
+                            if (mergedData.has(r.date)) {
+                                mergedData.get(r.date).avg_gas_price_gwei = r.value;
+                            } else {
+                                mergedData.set(r.date, {
+                                    date: r.date,
+                                    eth_burnt: 0,
+                                    avg_gas_price_gwei: r.value,
+                                    transaction_count: 0
+                                });
+                            }
+                        });
+                    }
+                    
+                    const gasRecords = Array.from(mergedData.values());
+                    log(`📦 Gas/Burn: Merged ${gasRecords.length} records`, 'info');
+                    
+                    const { error: gasError } = await batchUpsert('historical_gas_burn', gasRecords);
+                    if (gasError) throw new Error(`Gas/Burn: ${gasError.message}`);
+                    
+                    totalImported += gasRecords.length;
+                    log(`✅ Gas/Burn: Imported ${gasRecords.length} records`, 'success');
+                }
+                
+                // Import Transactions
+                if (csvData.tx) {
+                    progressEl.textContent = 'Importing Transactions...';
+                    
+                    const txRecords = csvData.tx.map(r => ({
+                        date: r.date,
+                        timestamp: r.timestamp * 1000,
+                        tx_count: Math.round(r.value)
+                    }));
+                    
+                    const { error: txError } = await batchUpsert('historical_transactions', txRecords);
+                    if (txError) throw new Error(`Transactions: ${txError.message}`);
+                    
+                    totalImported += txRecords.length;
+                    log(`✅ Transactions: Imported ${txRecords.length} records`, 'success');
+                    
+                    // Also update gas_burn table with tx counts
+                    if (csvData.burn || csvData.gas) {
+                        const txMap = new Map(csvData.tx.map(r => [r.date, Math.round(r.value)]));
+                        const { data: gasData } = await supabase.from('historical_gas_burn')
+                            .select('date, eth_burnt, avg_gas_price_gwei')
+                            .order('date', { ascending: false })
+                            .limit(2000);
+                        
+                        if (gasData) {
+                            const updates = gasData
+                                .filter(g => txMap.has(g.date))
+                                .map(g => ({
+                                    date: g.date,
+                                    eth_burnt: g.eth_burnt,
+                                    avg_gas_price_gwei: g.avg_gas_price_gwei,
+                                    transaction_count: txMap.get(g.date)
+                                }));
+                            
+                            if (updates.length > 0) {
+                                await batchUpsert('historical_gas_burn', updates);
+                                log(`✅ Updated ${updates.length} gas_burn records with tx counts`, 'success');
+                            }
+                        }
+                    }
+                }
+                
+                progressEl.textContent = `✓ Done! Imported ${totalImported} total records`;
+                progressEl.style.color = 'var(--success)';
+                
+                // Refresh data display
+                await refreshData();
+                
+            } catch (err) {
+                progressEl.textContent = `✗ Error: ${err.message}`;
+                progressEl.style.color = 'var(--error)';
+                log(`❌ Import failed: ${err.message}`, 'error');
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // AUTO-FILL NEW DATA (Block-based calculation)
+        // ═══════════════════════════════════════════════════════════════════
+        async function autoFillNewData() {
+            if (!supabase || !ETHERSCAN_API_KEY) {
+                alert('Please configure Supabase and Etherscan API key first!');
+                return;
+            }
+            
+            log('🔄 Auto-fill: Starting...', 'info');
+            
+            try {
+                // 1. Get the latest date from gas_burn table
+                const { data: latestGas } = await supabase.from('historical_gas_burn')
+                    .select('date')
+                    .order('date', { ascending: false })
+                    .limit(1);
+                
+                const { data: latestTx } = await supabase.from('historical_transactions')
+                    .select('date')
+                    .order('date', { ascending: false })
+                    .limit(1);
+                
+                const lastGasDate = latestGas?.[0]?.date ? new Date(latestGas[0].date) : null;
+                const lastTxDate = latestTx?.[0]?.date ? new Date(latestTx[0].date) : null;
+                
+                log(`📅 Last Gas/Burn date: ${lastGasDate?.toISOString().split('T')[0] || 'None'}`, 'info');
+                log(`📅 Last Tx date: ${lastTxDate?.toISOString().split('T')[0] || 'None'}`, 'info');
+                
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                // 2. Calculate missing dates
+                const missingDates = [];
+                if (lastGasDate) {
+                    let d = new Date(lastGasDate);
+                    d.setDate(d.getDate() + 1);
+                    while (d < today) {
+                        missingDates.push(new Date(d));
+                        d.setDate(d.getDate() + 1);
+                    }
+                }
+                
+                if (missingDates.length === 0) {
+                    log('✅ Auto-fill: Data is up to date!', 'success');
+                    return;
+                }
+                
+                log(`📊 Auto-fill: Need to fill ${missingDates.length} days`, 'info');
+                
+                // 3. For each missing date, calculate from block data
+                const gasRecords = [];
+                const txRecords = [];
+                
+                for (let i = 0; i < missingDates.length; i++) {
+                    const date = missingDates[i];
+                    const dateStr = date.toISOString().split('T')[0];
+                    
+                    log(`   Processing ${dateStr} (${i+1}/${missingDates.length})...`, 'info');
+                    
+                    // Get block range for this date
+                    const startTime = Math.floor(date.getTime() / 1000);
+                    const endTime = startTime + 86400 - 1;
+                    
+                    // Get start block
+                    const startBlockUrl = `https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=${startTime}&closest=after&apikey=${ETHERSCAN_API_KEY}`;
+                    const startBlockRes = await fetch(startBlockUrl);
+                    const startBlockData = await startBlockRes.json();
+                    
+                    // Get end block  
+                    const endBlockUrl = `https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=${endTime}&closest=before&apikey=${ETHERSCAN_API_KEY}`;
+                    const endBlockRes = await fetch(endBlockUrl);
+                    const endBlockData = await endBlockRes.json();
+                    
+                    if (startBlockData.status !== '1' || endBlockData.status !== '1') {
+                        log(`   ⚠️ Could not get blocks for ${dateStr}`, 'warn');
+                        continue;
+                    }
+                    
+                    const startBlock = parseInt(startBlockData.result);
+                    const endBlock = parseInt(endBlockData.result);
+                    const blockCount = endBlock - startBlock + 1;
+                    
+                    // Sample a few blocks to estimate gas metrics
+                    const sampleBlocks = [];
+                    const sampleSize = Math.min(20, blockCount);
+                    const step = Math.floor(blockCount / sampleSize);
+                    
+                    for (let j = 0; j < sampleSize; j++) {
+                        sampleBlocks.push(startBlock + j * step);
+                    }
+                    
+                    let totalBaseFee = 0;
+                    let totalGasUsed = 0;
+                    let totalTxCount = 0;
+                    let validSamples = 0;
+                    
+                    for (const blockNum of sampleBlocks) {
+                        try {
+                            const blockUrl = `https://api.etherscan.io/api?module=proxy&action=eth_getBlockByNumber&tag=0x${blockNum.toString(16)}&boolean=false&apikey=${ETHERSCAN_API_KEY}`;
+                            const blockRes = await fetch(blockUrl);
+                            const blockData = await blockRes.json();
+                            
+                            if (blockData.result) {
+                                const baseFee = parseInt(blockData.result.baseFeePerGas || '0', 16);
+                                const gasUsed = parseInt(blockData.result.gasUsed || '0', 16);
+                                const txCount = (blockData.result.transactions || []).length;
+                                
+                                totalBaseFee += baseFee;
+                                totalGasUsed += gasUsed;
+                                totalTxCount += txCount;
+                                validSamples++;
+                            }
+                        } catch (e) {
+                            // Skip failed samples
+                        }
+                        
+                        // Rate limiting
+                        await new Promise(r => setTimeout(r, 220));
+                    }
+                    
+                    if (validSamples > 0) {
+                        const avgBaseFeeWei = totalBaseFee / validSamples;
+                        const avgGasUsed = totalGasUsed / validSamples;
+                        const avgTxPerBlock = totalTxCount / validSamples;
+                        
+                        // Extrapolate to full day
+                        const dailyGasUsed = avgGasUsed * blockCount;
+                        const dailyBurn = (avgBaseFeeWei * dailyGasUsed) / 1e18; // ETH
+                        const dailyTx = Math.round(avgTxPerBlock * blockCount);
+                        const avgGasGwei = avgBaseFeeWei / 1e9;
+                        
+                        gasRecords.push({
+                            date: dateStr,
+                            eth_burnt: parseFloat(dailyBurn.toFixed(2)),
+                            avg_gas_price_gwei: parseFloat(avgGasGwei.toFixed(2)),
+                            transaction_count: dailyTx
+                        });
+                        
+                        txRecords.push({
+                            date: dateStr,
+                            timestamp: date.getTime(),
+                            tx_count: dailyTx
+                        });
+                        
+                        log(`   ✓ ${dateStr}: ${dailyBurn.toFixed(1)} ETH burnt, ${avgGasGwei.toFixed(1)} Gwei, ${dailyTx.toLocaleString()} txs`, 'success');
+                    }
+                }
+                
+                // 4. Save to Supabase
+                if (gasRecords.length > 0) {
+                    const { error: gasError } = await batchUpsert('historical_gas_burn', gasRecords);
+                    if (gasError) log(`❌ Gas save error: ${gasError.message}`, 'error');
+                    else log(`✅ Saved ${gasRecords.length} gas/burn records`, 'success');
+                }
+                
+                if (txRecords.length > 0) {
+                    const { error: txError } = await batchUpsert('historical_transactions', txRecords);
+                    if (txError) log(`❌ Tx save error: ${txError.message}`, 'error');
+                    else log(`✅ Saved ${txRecords.length} transaction records`, 'success');
+                }
+                
+                log(`🎉 Auto-fill complete! Filled ${gasRecords.length} days`, 'success');
+                await refreshData();
+                
+            } catch (err) {
+                log(`❌ Auto-fill error: ${err.message}`, 'error');
+            }
+        }
 
         function showConfig() {
             document.getElementById('configSupabaseUrl').value = SUPABASE_URL;
