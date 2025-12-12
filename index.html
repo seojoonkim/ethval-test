@@ -19987,7 +19987,7 @@
                 const setEl = (id, text) => { try { const el = document.getElementById(id); if (el) el.textContent = text; } catch(e){} };
                 const safeCall = (fn, name) => { try { fn(); } catch(e) { console.error(name + ' error:', e); } };
                 
-                // 90일 시뮬레이션 (fallback용)
+                // 시뮬레이션 (fallback용)
                 const simpleHistory = (val, days = 365) => {
                     const h = [];
                     for (let i = days; i >= 0; i--) {
@@ -20905,7 +20905,6 @@
             } catch (e) {
                 // Silent fail for non-critical UI updates
             }
-        }
         }
 
         // 초기 차트 생성 (더미 데이터)
